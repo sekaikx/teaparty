@@ -183,3 +183,8 @@ func choose_rattle(priv: Dictionary, pub: Dictionary) -> int:
 	if not deadly.is_empty() and rng.randf() < 0.65:
 		return deadly[rng.randi_range(0, deadly.size() - 1)]
 	return living[rng.randi_range(0, living.size() - 1)]
+
+
+## Scared enough of its own cup to try knocking it away during the toast?
+func fears_own_cup(pub: Dictionary) -> bool:
+	return float(belief.get(_cup_at(pub, seat), 0.3)) > 0.55 or rng.randf() < 0.15

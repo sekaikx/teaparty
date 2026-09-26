@@ -51,6 +51,10 @@ var _tray_sig := ""
 var _items_sig := ""
 var _guest_sig := ""
 var _last_phase := -1
+## What you did this round, so you don't have to remember it ("You put POISON in Ada's cup").
+var _my_pour := ""
+var _my_lock := ""
+var _memo: Label
 
 
 func setup(p_table: TableView) -> void:
@@ -143,6 +147,10 @@ func _build_bottom() -> void:
 	_tray.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tray.custom_minimum_size = Vector2(TrayCard.W, TrayCard.H)
 	tv.add_child(_tray)
+	# Memory: who poured your cup and what you put in theirs.
+	_memo = Ui.wrap(Ui.label("", 14, Ui.CREAM, 700), 290)
+	_memo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tv.add_child(_memo)
 	var right := Ui.hbox(12)
 	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(right)
@@ -255,7 +263,11 @@ func _process(_delta: float) -> void:
 			(c as TrayCard).set_revealed(show)
 	if _drag_ghost:
 		_drag_ghost.global_position = mouse - _drag_ghost.size * 0.5
-	_cake_label.text = "THROW CAKE x%d" % Session.cakes_left() if Session.am_alive() else "RATTLE A CUP (click)"
+	_cake_label.text = ("THROW CAKE x%d" if Session.am_alive() else "GHOST CAKE x%d") % Session.cakes_left()
+	var memo := _memory() if Session.phase in [P.ITEMS, P.TALK, P.DRINK] else ""
+	if _memo.text != memo:
+		_memo.text = memo
+	_memo.visible = memo != ""
 	if Input.is_action_just_pressed(&"emote_wheel") and not _pause.visible:
 		_emotes.open()
 	if Input.is_action_just_released(&"emote_wheel"):
@@ -326,7 +338,7 @@ func _refresh() -> void:
 	_refresh_items()
 	_refresh_coach()
 	var alive := Session.am_alive()
-	_pass.visible = ph == P.ITEMS and Session.is_my_turn()
+	_pass.visible = Session.is_my_turn()
 	_ready.visible = ph == P.TALK and alive
 	var ready := bool(Session.seat_info(Session.my_seat).get("ready", false))
 	_ready.disabled = ready
@@ -344,7 +356,6 @@ func _refresh() -> void:
 
 
 func _refresh_guests() -> void:
-	var turn := int(Session.public.get("turn", -1))
 	var rows: Array = []
 	for i in Session.seat_count():
 		var s := Session.seat_info(i)
@@ -354,8 +365,8 @@ func _refresh_guests() -> void:
 			tag = "GHOST"
 		elif Session.phase == P.POUR:
 			tag = "POURED" if s.get("poured", false) else "pouring..."
-		elif Session.phase == P.ITEMS and i == turn:
-			tag = "CHOOSING"
+		elif Session.phase == P.ITEMS and not Session.items_resolving():
+			tag = "LOCKED IN" if s.get("item_done", false) else "choosing..."
 		elif Session.phase == P.TALK:
 			tag = "READY" if s.get("ready", false) else ""
 		var talking := Voice.is_speaking(int(s.get("id", 0)))
@@ -382,7 +393,7 @@ func _refresh_guests() -> void:
 		if r[3]:
 			h.add_child(Ui.label("talking", 13, Ui.MINT, 700))
 		if r[1] != "":
-			var col := Ui.MINT if r[1] in ["POURED", "READY"] else (Ui.YELLOW if r[1] == "CHOOSING" else Ui.MUTED)
+			var col := Ui.MINT if r[1] in ["POURED", "READY", "LOCKED IN"] else Ui.MUTED
 			h.add_child(Ui.label(r[1], 13, col, 700))
 		_guests.add_child(p)
 
@@ -460,6 +471,8 @@ func _coach_text_for() -> Array:
 			if left > 0:
 				return ["YOU'RE A GHOST! CLICK A CUP TO RATTLE IT", "You can see inside every cup (the glowing dots). %d rattles left. Warn them... or trick them." % left, Color("a7c7ff")]
 			return ["BOO. YOU'RE A GHOST", "Out of rattles this round. Hold V to haunt the other ghosts.", Color("a7c7ff")]
+		if ph == P.DRINK and Session.cakes_left() > 0:
+			return ["GHOST CAKES! (F)", "You know which cups are deadly. Spill one to save a friend... or knock away an antidote.", Color("a7c7ff")]
 		return ["", "", Ui.YELLOW]
 	match ph:
 		P.INTRO:
@@ -477,6 +490,8 @@ func _coach_text_for() -> Array:
 				return ["CLICK YOUR TEAPOT", "You pour tea for %s, the guest on your left." % target.capitalize(), Ui.YELLOW]
 			return ["DRAG A CARD INTO %s'S CUP" % target, "Poison to kill, antidote to save, sugar to confuse, plain to be boring.", Ui.PINK]
 		P.ITEMS:
+			if Session.items_resolving():
+				return ["PLAYING THE ITEMS...", "Everyone's items go off one by one. Watch the cups!", Ui.LILAC]
 			if Session.is_my_turn():
 				if table.targeting >= 0:
 					var item := table.targeting_item()
@@ -485,18 +500,33 @@ func _coach_text_for() -> Array:
 					var picked := table.targets.size()
 					return ["%s: CLICK %s" % [Defs.item_name(item).to_upper(), ("%d %s (%d/%d)" % [need, what, picked, need]) if need > 1 else "A " + what],
 						String(Defs.ITEMS[item]["desc"]) + "  Right-click to cancel.", Ui.SKY]
-				return ["YOUR TURN: PLAY AN ITEM", "Click an item card (bottom right), or PASS.", Ui.SKY]
-			var turn := int(Session.public.get("turn", -1))
-			return ["%s IS CHOOSING AN ITEM..." % Session.seat_name(turn).to_upper() if turn >= 0 else "", "Watch the cups closely.", Ui.LILAC]
+				return ["PICK AN ITEM (everyone picks at once)", "Click an item card (bottom right), or PASS.", Ui.SKY]
+			return ["LOCKED IN: %s" % _my_lock if _my_lock != "" else "LOCKED IN", "Waiting for the others...", Ui.MINT]
 		P.TALK:
 			if bool(Session.seat_info(Session.my_seat).get("ready", false)):
-				return ["YOU'RE READY", "Keep lying while the others decide.", Ui.MINT]
+				return ["YOU'RE READY", "Keep lying. At the toast, hit a cup with a cake (F) to spill it!", Ui.MINT]
 			return ["TALK IT OUT! (hold V)", "Accuse, bluff, beg. Q for emotes. Then press READY TO DRINK.", Ui.PINK]
 		P.DRINK:
-			return ["RAISE YOUR CUPS...", "", Ui.YELLOW]
+			return ["CAKE A CUP TO SPILL IT! (F)", "Hit a raised cup and nobody drinks it. Hit a face and they drop it.", Ui.ORANGE]
 		P.REVEAL:
 			return ["", "", Ui.YELLOW]
 	return ["", "", Ui.YELLOW]
+
+
+func _memory() -> String:
+	var from := -1
+	for i in Session.seat_count():
+		if int(Session.seat_info(i).get("pour_target", -1)) == Session.my_seat:
+			from = i
+	var bits: Array[String] = []
+	if from >= 0:
+		bits.append("%s poured YOUR cup." % Session.seat_name(from))
+	var cur := Session.cup_of(Session.my_seat)
+	if not cur.is_empty() and int(cur.get("owner", Session.my_seat)) != Session.my_seat:
+		bits.append("(It got swapped!)")
+	if _my_pour != "":
+		bits.append(_my_pour)
+	return " ".join(bits)
 
 
 func _show_role() -> void:
@@ -528,13 +558,9 @@ func _show_role() -> void:
 	Ui.pop_in(p)
 	Sfx.play(&"secret", -3.0)
 	var tw := c.create_tween()
-	tw.tween_interval(3.4)
-	tw.tween_property(p, "modulate:a", 0.0, 0.4)
+	tw.tween_interval(2.2)
+	tw.tween_property(p, "modulate:a", 0.0, 0.3)
 	tw.tween_callback(c.queue_free)
-	if not bool(Profile.settings.get("tutorial_seen", false)):
-		tw.tween_callback(func() -> void:
-			Profile.set_setting("tutorial_seen", true)
-			_root.add_child(Tutorial.new()))
 
 
 # ---------------------------------------------------------------- events
@@ -545,6 +571,8 @@ func _on_event(ev: Dictionary) -> void:
 		"round":
 			_reveal.visible = false
 			_note.visible = false
+			_my_pour = ""
+			_my_lock = ""
 			var laced := bool(ev.get("laced", false))
 			stamp("ROUND %d" % int(ev["round"]), Ui.YELLOW, 1.6)
 			_log("ROUND %d" % int(ev["round"]), Ui.YELLOW)
@@ -554,6 +582,7 @@ func _on_event(ev: Dictionary) -> void:
 			if int(ev["seat"]) != Session.my_seat:
 				_log("%s poured for %s" % [name_of.call(ev["seat"]), name_of.call(ev["target"])])
 		"pour_mine":
+			_my_pour = "You put %s in %s's cup." % [Defs.ingredient_name(int(ev["k"])).to_upper(), name_of.call(ev["target"])]
 			_log("You dropped %s into %s's cup" % [Defs.ingredient_name(int(ev["k"])).to_upper(), name_of.call(ev["target"])], Ui.YELLOW)
 		"auto_pour":
 			_log("Too slow! %s went in for you" % Defs.ingredient_name(int(ev["k"])).to_upper(), Ui.PINK)
@@ -626,8 +655,23 @@ func _on_event(ev: Dictionary) -> void:
 		"rattle":
 			_log("The ghost of %s rattles %s's cup..." % [name_of.call(ev["seat"]), name_of.call(ev["target"])], Color("a7c7ff"))
 		"cake":
-			if ev.has("target"):
-				_log("%s threw a cake at %s" % [name_of.call(ev["seat"]), name_of.call(ev["target"])], Ui.ORANGE)
+			var v := int(ev.get("victim", -1))
+			match String(ev.get("hit", "miss")):
+				"cup":
+					_log("%s's cake SPILLED %s's tea!" % [name_of.call(ev["seat"]), name_of.call(v)], Ui.SKY)
+					if v == Session.my_seat:
+						stamp("YOUR CUP SPILLED!", Ui.SKY, 1.4)
+				"head":
+					_log("%s BONKED %s%s" % [name_of.call(ev["seat"]), name_of.call(v), " (cup dropped!)" if ev.get("spilled", false) else ""], Ui.ORANGE)
+					if v == Session.my_seat:
+						stamp("BONK!", Ui.ORANGE, 1.0)
+		"locked_mine":
+			var t: Array[String] = []
+			for x: int in ev["targets"]:
+				t.append(Session.seat_name(x))
+			_my_lock = Defs.item_name(int(ev["item"])).to_upper() + ((" > " + ", ".join(t)) if not t.is_empty() else "")
+		"item_step":
+			_log("%s plays %s" % [name_of.call(ev["seat"]), Defs.item_name(int(ev["item"])).to_upper()], Ui.LILAC)
 		"pass":
 			if ev.get("timeout", false):
 				_log("%s ran out of time" % name_of.call(ev["seat"]))
@@ -719,6 +763,11 @@ func _show_reveal(list: Array) -> void:
 			icons.add_child(Ui.label("empty", 14, Color(Ui.INK, 0.5)))
 		h.add_child(icons)
 		h.add_child(Ui.label("DEAD" if r["died"] else "LIVED", 16, Color("c0184a") if r["died"] else Color("1f7a4d"), 700))
+		if r["died"]:
+			var bl := Ui.label(TableView.blame_text(r.get("blame", {})).replace("\n", " "), 13, Color("c0184a"), 700)
+			bl.custom_minimum_size.x = 200
+			bl.autowrap_mode = TextServer.AUTOWRAP_WORD
+			h.add_child(bl)
 		_reveal_rows.add_child(row)
 	_reveal.visible = true
 	Ui.pop_in(_reveal)

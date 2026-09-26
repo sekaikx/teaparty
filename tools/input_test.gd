@@ -80,7 +80,12 @@ func _run() -> void:
 			var mp := cam.unproject_position(table.cup_at_seat(Session.my_seat).global_position + Vector3(0, 0.1, 0))
 			await _click(mp)
 			await _click(cam.unproject_position(table.cup_at_seat(other).global_position + Vector3(0, 0.1, 0)))
-			await get_tree().create_timer(0.6).timeout
+			await get_tree().create_timer(0.3).timeout
+			_check("item locked in", bool(Session.seat_info(Session.my_seat).get("item_done", false)))
+			var w := 0.0
+			while Session.phase == Defs.Phase.ITEMS and w < 30.0:
+				await get_tree().process_frame
+				w += get_process_delta_time()
 			_check("swap moved my cup", int(Session.cup_of(Session.my_seat)["id"]) != before_a)
 	else:
 		print("INPUT SKIP item turn (not reached)")

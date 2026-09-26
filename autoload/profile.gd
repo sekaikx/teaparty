@@ -6,7 +6,7 @@ signal changed
 
 const PATH := "user://teaparty_profile.cfg"
 const STAT_KEYS := [&"matches", &"wins", &"kills", &"deaths", &"rounds_survived", &"sniffs", &"toasts",
-	&"swaps", &"peeks", &"rattles", &"butler_wins"]
+	&"swaps", &"peeks", &"rattles", &"butler_wins", &"cake_hits", &"saves"]
 
 var player_name := "Guest"
 var xp := 0
@@ -128,13 +128,15 @@ func custom_rules_unlocked() -> bool:
 
 ## Applies one match's result for this player. `me` = the seat's final stats from the host.
 ## Returns a summary for the results screen: xp, coins, levels gained, new titles, unlocks.
-func award(me: Dictionary, won: bool, was_butler: bool) -> Dictionary:
+func award(me: Dictionary, won: bool, was_butler: bool, awards: int = 0, fun: Dictionary = {}) -> Dictionary:
 	var before_level := level()
 	var before_titles := titles_unlocked()
 	var survived := int(me.get("rounds_survived", 0))
 	var kills := int(me.get("kills", 0))
 	var gained_xp := 30 + 15 * survived + 25 * kills + (120 if won else 0)
-	var gained_coins := 15 + 10 * survived + 15 * kills + (75 if won else 0)
+	var gained_coins := 15 + 10 * survived + 15 * kills + (75 if won else 0) + 25 * awards
+	stats[&"cake_hits"] = int(stats.get(&"cake_hits", 0)) + int(fun.get("hits", 0))
+	stats[&"saves"] = int(stats.get(&"saves", 0)) + int(fun.get("saves", 0))
 	xp += gained_xp
 	coins += gained_coins
 	stats[&"matches"] += 1

@@ -18,8 +18,6 @@ var cups: Dictionary = {}
 var cup_at: Array[int] = []
 var round_no := 0
 var laced := false
-var turn_order: Array[int] = []
-var turn_index := 0
 ## Drinks this round in order: {seat, cup, contents, died, toast}.
 var drinks: Array[Dictionary] = []
 ## Seats that fell in the most recent drinking (a toast or the table drink).
@@ -112,6 +110,9 @@ func start_round() -> void:
 		cup["contents"] = [{"k": I.POISON, "by": -1}] if laced and seats[seat]["alive"] else []
 		cup["tea"] = false
 		cup["drunk"] = not seats[seat]["alive"]
+		cup["swapped_by"] = -1
+		cup["spilled"] = false
+		cup["spilled_by"] = -1
 	var alive := alive_seats()
 	var hand_size := clampi(int(rules["hand_size"]), 1, 5)
 	var deck := build_deck(alive.size() * hand_size)
@@ -216,7 +217,7 @@ func spike(seat: int, target: int) -> bool:
 		return false
 	if not is_alive(target) or target == seat:
 		return false
-	(cups[cup_at[target]]["contents"] as Array).append({"k": I.POISON, "by": seat})
+	(cups[cup_at[target]]["contents"] as Array).append({"k": I.POISON, "by": seat, "spike": true})
 	seats[seat]["spiked"] = true
 	return true
 
@@ -228,40 +229,38 @@ func all_poured() -> bool:
 	return true
 
 
-# ---------------------------------------------------------------- items (one turn each)
+# ---------------------------------------------------------------- items (everyone at once)
+# Everybody picks an item and its targets during the same short window; then they all play out
+# in a fixed order that anyone can follow: sniffs and peeks first (information), then swaps (the
+# cups move), then toasts (the drama). Within each group, seat order rotates every round.
+
+const ITEM_ORDER := [Defs.Item.SNIFF, Defs.Item.PEEK, Defs.Item.SWAP, Defs.Item.TOAST]
+
+## seat -> {"index": item index, "item": item, "targets": Array} or {} for a pass.
+var picks: Dictionary = {}
+
 
 func begin_items() -> void:
-	var alive := alive_seats()
-	turn_order.clear()
-	if alive.is_empty():
-		return
-	var offset := (round_no - 1) % alive.size()
-	for i in alive.size():
-		turn_order.append(alive[(i + offset) % alive.size()])
-	turn_index = 0
-	_skip_dead_turns()
-
-
-func current_turn() -> int:
-	return turn_order[turn_index] if turn_index < turn_order.size() else -1
+	picks.clear()
+	for seat in alive_seats():
+		seats[seat]["item_done"] = (seats[seat]["items"] as Array).is_empty()
+		if seats[seat]["item_done"]:
+			picks[seat] = {}
 
 
 func items_done() -> bool:
-	return turn_index >= turn_order.size()
-
-
-func pass_turn(seat: int) -> bool:
-	if seat != current_turn():
-		return false
-	seats[seat]["item_done"] = true
-	turn_index += 1
-	_skip_dead_turns()
+	for seat in alive_seats():
+		if not seats[seat]["item_done"]:
+			return false
 	return true
 
 
-func _skip_dead_turns() -> void:
-	while turn_index < turn_order.size() and not is_alive(turn_order[turn_index]):
-		turn_index += 1
+func pass_turn(seat: int) -> bool:
+	if not is_alive(seat) or seats[seat]["item_done"]:
+		return false
+	seats[seat]["item_done"] = true
+	picks[seat] = {}
+	return true
 
 
 ## Validates targets for an item (seat indices). Returns "" when fine, else the reason.
@@ -282,52 +281,102 @@ func item_error(seat: int, item: int, targets: Array) -> String:
 	return ""
 
 
-## Plays the item at `item_index` of the seat's items. Returns {ok, error, public: Array of
-## events for everyone, private: Array of events for the player}.
-func use_item(seat: int, item_index: int, targets: Array) -> Dictionary:
-	var res := {"ok": false, "error": "", "public": [], "private": []}
-	if seat != current_turn():
-		res["error"] = "Not your turn."
-		return res
+## Lock in an item for this round's items phase. Returns "" or the reason it was refused.
+func choose_item(seat: int, item_index: int, targets: Array) -> String:
+	if not is_alive(seat):
+		return "Ghosts can't use items."
+	if seats[seat]["item_done"]:
+		return "You've already picked."
 	var items: Array = seats[seat]["items"]
 	if item_index < 0 or item_index >= items.size():
-		res["error"] = "No such item."
-		return res
+		return "No such item."
 	var item: int = items[item_index]
 	var err := item_error(seat, item, targets)
 	if err != "":
-		res["error"] = err
-		return res
-	items.remove_at(item_index)
-	res["ok"] = true
-	match item:
-		IT.SWAP:
-			var a: int = targets[0]
-			var b: int = targets[1]
-			var ca := cup_at[a]
-			cup_at[a] = cup_at[b]
-			cup_at[b] = ca
-			seats[seat]["swaps"] += 1
-			res["public"].append({"type": "swap", "seat": seat, "a": a, "b": b})
-		IT.SNIFF:
-			var t: int = targets[0]
-			seats[seat]["sniffs"] += 1
-			res["public"].append({"type": "sniff", "seat": seat, "target": t})
-			res["private"].append({"type": "sniff_result", "target": t, "smell": smell(t)})
-		IT.PEEK:
-			var t: int = targets[0]
-			seats[seat]["peeks"] += 1
-			res["public"].append({"type": "peek", "seat": seat, "target": t})
-			res["private"].append({"type": "peek_result", "target": t,
-				"hand": (seats[t]["hand"] as Array).duplicate(), "items": (seats[t]["items"] as Array).duplicate()})
-		IT.TOAST:
-			var t: int = targets[0]
-			seats[seat]["toasts"] += 1
-			fallen_last.clear()
-			res["public"].append({"type": "toast", "seat": seat, "target": t})
-			res["public"].append(drink(t, true))
-	pass_turn(seat)
-	return res
+		return err
+	picks[seat] = {"index": item_index, "item": item, "targets": targets.duplicate()}
+	seats[seat]["item_done"] = true
+	return ""
+
+
+## Plays every locked-in item in order. Returns steps: {seat, item, public: [...], private: [...]}.
+func resolve_items() -> Array:
+	var steps: Array = []
+	var alive := alive_seats()
+	if alive.is_empty():
+		return steps
+	var offset := (round_no - 1) % alive.size()
+	var order: Array[int] = []
+	for i in alive.size():
+		order.append(alive[(i + offset) % alive.size()])
+	fallen_last.clear()
+	for kind: int in ITEM_ORDER:
+		for seat in order:
+			var pk: Dictionary = picks.get(seat, {})
+			if pk.is_empty() or int(pk["item"]) != kind:
+				continue
+			var step := {"seat": seat, "item": kind, "public": [], "private": []}
+			steps.append(step)
+			if not is_alive(seat):
+				step["public"].append({"type": "note", "text": "%s's %s fizzles (they're dead)." % [seats[seat]["name"], Defs.item_name(kind)]})
+				continue
+			var targets: Array = pk["targets"]
+			if item_error(seat, kind, targets) != "":
+				step["public"].append({"type": "note", "text": "%s's %s fizzles." % [seats[seat]["name"], Defs.item_name(kind)]})
+				_remove_item(seat, kind)
+				continue
+			_remove_item(seat, kind)
+			match kind:
+				IT.SWAP:
+					var a: int = targets[0]
+					var b: int = targets[1]
+					var ca := cup_at[a]
+					cup_at[a] = cup_at[b]
+					cup_at[b] = ca
+					cups[cup_at[a]]["swapped_by"] = seat
+					cups[cup_at[b]]["swapped_by"] = seat
+					seats[seat]["swaps"] += 1
+					step["public"].append({"type": "swap", "seat": seat, "a": a, "b": b})
+				IT.SNIFF:
+					var t: int = targets[0]
+					seats[seat]["sniffs"] += 1
+					step["public"].append({"type": "sniff", "seat": seat, "target": t})
+					step["private"].append({"type": "sniff_result", "target": t, "smell": smell(t)})
+				IT.PEEK:
+					var t: int = targets[0]
+					seats[seat]["peeks"] += 1
+					step["public"].append({"type": "peek", "seat": seat, "target": t})
+					step["private"].append({"type": "peek_result", "target": t,
+						"hand": (seats[t]["hand"] as Array).duplicate(), "items": (seats[t]["items"] as Array).duplicate()})
+				IT.TOAST:
+					var t: int = targets[0]
+					seats[seat]["toasts"] += 1
+					step["public"].append({"type": "toast", "seat": seat, "target": t})
+					step["public"].append(drink(t, true))
+	picks.clear()
+	return steps
+
+
+func _remove_item(seat: int, kind: int) -> void:
+	var items: Array = seats[seat]["items"]
+	var i := items.find(kind)
+	if i >= 0:
+		items.remove_at(i)
+
+
+## Knocked over (a cake, a clumsy fall): the cup is emptied. An empty cup is safe to drink.
+func spill(seat: int, by: int = -1) -> bool:
+	if seat < 0 or seat >= cup_at.size() or not is_alive(seat):
+		return false
+	var cup: Dictionary = cups[cup_at[seat]]
+	if cup["drunk"]:
+		return false
+	var was_lethal := lethal(cup["contents"])
+	cup["contents"] = []
+	cup["tea"] = false
+	cup["spilled"] = true
+	cup["spilled_by"] = by
+	return was_lethal
 
 
 ## What a sniff tells: "sweet" (sugar masks it), "poison" or "clean". Antidotes do not smell.
@@ -376,7 +425,8 @@ func drink(seat: int, toast: bool = false) -> Dictionary:
 		cup["drunk"] = true
 	else:
 		contents = []
-	var ev := {"type": "drink", "seat": seat, "cup": cup_at[seat], "contents": contents, "died": died, "toast": toast}
+	var ev := {"type": "drink", "seat": seat, "cup": cup_at[seat], "contents": contents, "died": died, "toast": toast,
+		"blame": blame(contents, cup)}
 	drinks.append(ev)
 	if died:
 		_kill(seat, contents)
@@ -392,7 +442,8 @@ func drink_all() -> Array[Dictionary]:
 	for seat in alive:
 		var cup: Dictionary = cups[cup_at[seat]]
 		var contents: Array = (cup["contents"] as Array).duplicate(true) if not cup["drunk"] else []
-		out.append({"type": "drink", "seat": seat, "cup": cup_at[seat], "contents": contents, "died": lethal(contents), "toast": false})
+		out.append({"type": "drink", "seat": seat, "cup": cup_at[seat], "contents": contents, "died": lethal(contents), "toast": false,
+			"blame": blame(contents, cup)})
 		cup["drunk"] = true
 	for ev in out:
 		drinks.append(ev)
@@ -413,6 +464,18 @@ func _kill(seat: int, contents: Array) -> void:
 			seats[by]["kills"] += 1
 
 
+## Who's to blame for a cup: {"poisoners": [seats] (-1 = the laced pot), "swapped_by": seat or -1,
+## "spilled_by": seat or -1}.
+static func blame(contents: Array, cup: Dictionary) -> Dictionary:
+	var by: Array = []
+	for c: Dictionary in contents:
+		var who := -2 if c.get("spike", false) else int(c["by"])
+		if c["k"] == Defs.Ingredient.POISON and not by.has(who):
+			by.append(who)
+	return {"poisoners": by, "swapped_by": int(cup.get("swapped_by", -1)), "spilled": bool(cup.get("spilled", false)),
+		"spilled_by": int(cup.get("spilled_by", -1))}
+
+
 ## The reveal: what was in every cup that was drunk this round.
 func reveal() -> Array:
 	var out: Array = []
@@ -420,7 +483,7 @@ func reveal() -> Array:
 		var kinds: Array = []
 		for c: Dictionary in d["contents"]:
 			kinds.append(c["k"])
-		out.append({"seat": d["seat"], "kinds": kinds, "died": d["died"], "toast": d["toast"]})
+		out.append({"seat": d["seat"], "kinds": kinds, "died": d["died"], "toast": d["toast"], "blame": d.get("blame", {})})
 	return out
 
 
@@ -498,8 +561,9 @@ func public_state() -> Dictionary:
 	var cs: Array = []
 	for seat in cup_at.size():
 		var c: Dictionary = cups[cup_at[seat]]
-		cs.append({"id": c["id"], "owner": c["owner"], "tea": c["tea"], "drunk": c["drunk"], "count": (c["contents"] as Array).size()})
-	return {"round": round_no, "laced": laced, "seats": ps, "cups": cs, "turn": current_turn() if not turn_order.is_empty() else -1}
+		cs.append({"id": c["id"], "owner": c["owner"], "tea": c["tea"], "drunk": c["drunk"], "count": (c["contents"] as Array).size(),
+			"spilled": bool(c.get("spilled", false))})
+	return {"round": round_no, "laced": laced, "seats": ps, "cups": cs}
 
 
 ## What one seat may see on top of the public state.

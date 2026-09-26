@@ -93,6 +93,134 @@ func build(roster: Array, rules: Dictionary, seat: int) -> void:
 		guests[my_seat].set_local(true)
 	_arrow = _make_arrow()
 	add_child(_arrow)
+	if Net.is_host():
+		Session.world_probe = self
+
+
+# ---------------------------------------------------------------- host hit tests (cakes)
+
+## What a cake landing at `point` hits: {"kind": "cup" | "head" | "miss", "seat"}. Cups win
+## ties (they're the small, meaningful target). The thrower can't bonk themselves.
+func hit_test(point: Vector3, thrower: int) -> Dictionary:
+	var best := {"kind": "miss", "seat": -1}
+	var best_d := 0.34
+	for id: int in cups:
+		var cup: TeaCup = cups[id]
+		if cup.is_flung() or not bool(Session.seat_info(cup.seat).get("alive", false)):
+			continue
+		var d := (cup.global_position + Vector3(0, 0.12, 0)).distance_to(point)
+		if d < best_d:
+			best_d = d
+			best = {"kind": "cup", "seat": cup.seat}
+	if best["kind"] == "cup":
+		return best
+	best_d = 0.42
+	for g in guests:
+		if g.seat == thrower or not g.alive or g.is_down():
+			continue
+		var d := g.head_position().distance_to(point)
+		if d < best_d:
+			best_d = d
+			best = {"kind": "head", "seat": g.seat}
+	return best
+
+
+func cup_point(seat: int) -> Vector3:
+	var cup := cup_at_seat(seat)
+	return cup.global_position + Vector3(0, 0.12, 0) if cup else Vector3.ZERO
+
+
+func head_point(seat: int) -> Vector3:
+	return guests[seat].head_position() if seat >= 0 and seat < guests.size() else Vector3.ZERO
+
+
+func _throw_origin(g: Guest) -> Vector3:
+	if g.is_ghost:
+		return g.global_transform * Vector3(0, 2.4, -Guest.SIT_BACK + 0.3)
+	return g.head_position() + g.global_transform.basis * Vector3(-0.35, -0.15, 0.35)
+
+
+## A cake event from the host: fly it, then apply what the host decided.
+func _cake(ev: Dictionary) -> void:
+	var g := guests[int(ev["seat"])]
+	var to: Vector3 = ev["to"]
+	var kind := String(ev.get("hit", "miss"))
+	var victim := int(ev.get("victim", -1))
+	if kind == "head" and victim >= 0:
+		to = guests[victim].head_position()
+	elif kind == "cup" and victim >= 0:
+		to = cup_point(victim)
+	if not g.is_ghost:
+		g.point_at(to)
+	var from := _throw_origin(g)
+	var landed := func(c: Cake) -> void:
+		var dir := (to - from).normalized()
+		match kind:
+			"cup":
+				var cup := cup_at_seat(victim)
+				if cup:
+					var holder := guests[victim]
+					if holder.holding() == cup:
+						holder._release_held(false)
+					cup.fling(Vector3(dir.x * 3.0, 3.5, dir.z * 3.0))
+				Cake.splat(self, to, c.frosting)
+				Sfx.play_at(&"clink", to, 0.0)
+				_float_text(to + Vector3(0, 0.4, 0), "SPILLED!", Color("4cc9f0"))
+			"head":
+				var v := guests[victim]
+				v.frost(c.frosting)
+				v.knockdown(dir)
+				if bool(ev.get("spilled", false)):
+					_float_text(v.head_position() + Vector3(0, 0.5, 0), "DROPPED IT!", Color("4cc9f0"))
+			_:
+				Cake.splat(self, to, c.frosting)
+	Cake.throw_from(self, from, to, int(ev["seed"]), landed, bool(ev.get("ghost", false)))
+
+
+## A short-lived label in the world ("SPILLED!", "POISONED BY ...").
+func _float_text(at: Vector3, text: String, color: Color, seconds: float = 1.6, size: int = 44) -> Label3D:
+	var l := Label3D.new()
+	l.font = Ui.display_font()
+	l.font_size = size
+	l.fixed_size = true
+	l.pixel_size = 0.00085
+	l.outline_size = 16
+	l.outline_modulate = Color("1d1128")
+	l.modulate = color
+	l.text = text
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.no_depth_test = true
+	l.render_priority = 6
+	add_child(l)
+	l.global_position = at
+	l.scale = Vector3.ONE * 0.3
+	var tw := l.create_tween()
+	tw.tween_property(l, "scale", Vector3.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(l, "position:y", l.position.y + 0.3, seconds)
+	if seconds > 0.0:
+		tw.tween_property(l, "modulate:a", 0.0, 0.3)
+		tw.tween_callback(l.queue_free)
+	return l
+
+
+## "POISONED BY LORD BISCUIT" / "...BY THE LACED POT" / "...BY THE BUTLER" (+ who swapped it in).
+static func blame_text(blame: Dictionary) -> String:
+	var names: Array[String] = []
+	for by: int in blame.get("poisoners", []):
+		if by == -1:
+			names.append("THE LACED POT")
+		elif by == -2:
+			names.append("THE BUTLER")
+		else:
+			names.append(Session.seat_name(by).to_upper())
+	var t := "POISONED BY " + (" & ".join(names) if not names.is_empty() else "???")
+	var sw := int(blame.get("swapped_by", -1))
+	if sw >= 0:
+		t += "\n(cup swapped in by %s)" % Session.seat_name(sw)
+	return t
+
+
+var _blame_labels: Array[Label3D] = []
 
 
 ## The coach's bouncing arrow that floats over whatever you should click next.
@@ -148,14 +276,44 @@ func _on_splash(g: Guest) -> void:
 
 ## Mouse-aimed cupcake (F).
 func throw_cake() -> void:
-	if not Session.am_alive() or Session.cakes_left() <= 0:
+	if Session.my_seat < 0 or Session.cakes_left() <= 0:
 		return
 	var m := get_viewport().get_mouse_position()
 	var from := camera.project_ray_origin(m)
 	var dir := camera.project_ray_normal(m)
+	# Aim assist: snap to a cup or face the cursor is roughly over (cups first, they're small).
+	var snap := _snap_target(from, dir)
+	if snap != Vector3.INF:
+		Session.request_throw(snap)
+		return
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 30.0, Guest.L_WORLD | Guest.L_HITBOX | Guest.L_RAGDOLL)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	Session.request_throw(hit["position"] if not hit.is_empty() else from + dir * 6.0)
+
+
+func _snap_target(from: Vector3, dir: Vector3) -> Vector3:
+	var best := Vector3.INF
+	var best_d := INF
+	var drinking := Session.phase == P.DRINK
+	var pts: Array[Array] = []
+	if drinking:
+		for id: int in cups:
+			var cup: TeaCup = cups[id]
+			if not cup.is_flung() and bool(Session.seat_info(cup.seat).get("alive", false)):
+				pts.append([cup.global_position + Vector3(0, 0.12, 0), 0.22])
+	for g in guests:
+		if g.alive and not g.is_down() and g.seat != my_seat:
+			pts.append([g.head_position(), 0.3])
+	for pr: Array in pts:
+		var p: Vector3 = pr[0]
+		var along := (p - from).dot(dir)
+		if along <= 0.2:
+			continue
+		var off := (from + dir * along).distance_to(p)
+		if off < float(pr[1]) and along < best_d:
+			best_d = along
+			best = p
+	return best
 
 
 func _exit_tree() -> void:
@@ -185,7 +343,7 @@ func _place_camera(snap: bool) -> void:
 			t = Transform3D(Basis(), eye).looking_at(s.origin + s.basis * Vector3(0, 0, -1.0) + Vector3(0, 0.3, 0), Vector3.UP)
 		elif alive:
 			# First person from your bean's eyes (your own head and hat are hidden from you).
-			var eye := s.origin + s.basis * Vector3(0, 0, -0.32 - _zoom * 0.6) + Vector3(0, 1.72 + _zoom * 0.5, 0)
+			var eye := s.origin + s.basis * Vector3(0, 0, -0.32 - _zoom * 0.6) + Vector3(0, 1.64 + _zoom * 0.5, 0)
 			t = Transform3D(Basis(), eye).looking_at(centre, Vector3.UP)
 		else:
 			# A ghost floats above its chair.
@@ -496,6 +654,10 @@ func _on_state() -> void:
 func _on_event(ev: Dictionary) -> void:
 	match String(ev.get("type", "")):
 		"round":
+			for l in _blame_labels:
+				if is_instance_valid(l):
+					l.queue_free()
+			_blame_labels.clear()
 			for g in guests:
 				g.release_cup(self, layout.cup_spots[g.seat])
 			_drinking.clear()
@@ -582,16 +744,19 @@ func _on_event(ev: Dictionary) -> void:
 			guests[int(ev["seat"])].say("pass" if not ev.get("timeout", false) else "zzz...", 1.2)
 		"countdown":
 			Sfx.play(&"drumroll", -2.0)
+			# Everyone stands and raises their cup for the toast (knock them away with cakes!).
+			for g in guests:
+				if g.alive:
+					g.raise_cup(cup_at_seat(g.seat))
 		"cake":
+			_cake(ev)
+		"item_step":
 			var g := guests[int(ev["seat"])]
-			var to: Vector3
-			if ev.has("target"):
-				to = guests[int(ev["target"])].head_position()
-			else:
-				to = ev["to"]
-			g.point_at(to)
-			Cake.throw_from(self, g.head_position() + g.global_transform.basis * Vector3(-0.35, -0.1, 0.4), to, g, int(ev["seed"]))
-		"spike_done", "pour_mine", "auto_pour", "sniff_result", "peek_result", "error", "note":
+			g.say(String(Defs.ITEMS[int(ev["item"])]["name"]).to_upper() + "!", 1.2, Color("7b2ff7"))
+		"locked":
+			guests[int(ev["seat"])].say("locked in", 1.0, Color("1f7a4d"))
+			Sfx.play(&"tick", -8.0)
+		"spike_done", "pour_mine", "auto_pour", "sniff_result", "peek_result", "error", "note", "locked_mine":
 			pass
 
 
@@ -603,21 +768,25 @@ func _play_drinks(drinks: Array, delay: float) -> void:
 		for d: Dictionary in drinks:
 			var g := guests[int(d["seat"])]
 			var cup: TeaCup = cups.get(int(d["cup"]))
-			if cup:
+			if cup and not cup.is_flung():
 				_drinking[cup.cup_id] = true
-			g.drink(cup))
-	tw.tween_interval(2.4)
+			if bool(d.get("toast", false)) or g.holding() == null:
+				g.drink(cup if cup and not cup.is_flung() else null)
+			else:
+				g.sip())
+	tw.tween_interval(2.2)
 	tw.tween_callback(func() -> void:
 		Sfx.play(&"heartbeat", -2.0))
-	tw.tween_interval(1.4)
+	tw.tween_interval(1.2)
 	tw.tween_callback(func() -> void:
 		var any_death := false
 		for d: Dictionary in drinks:
 			var g := guests[int(d["seat"])]
 			var cup: TeaCup = cups.get(int(d["cup"]))
-			if cup:
+			if cup and g.holding() == cup:
 				g.release_cup(self, layout.cup_spots[cup.seat])
 				cup.home = layout.cup_spots[cup.seat]
+			if cup:
 				cup.set_filled(false)
 				_drinking.erase(cup.cup_id)
 			if d["died"]:
@@ -625,10 +794,12 @@ func _play_drinks(drinks: Array, delay: float) -> void:
 					_focus = g.head_position()
 					_focus_until = Time.get_ticks_msec() + 3500
 				any_death = true
+				var head := g.head_position()
 				var t := g.die()
+				_blame_labels.append(_float_text(head + Vector3(0, 0.75, 0), blame_text(d.get("blame", {})), Color("ff5d8f"), 0.0, 30))
 				if g.seat == my_seat:
 					_death_cam_until = Time.get_ticks_msec() + int((t + 1.8) * 1000.0)
-			else:
+			elif g.alive and not g.is_down():
 				g.sit_back_down()
 		if any_death:
 			shake(0.18)
@@ -636,6 +807,14 @@ func _play_drinks(drinks: Array, delay: float) -> void:
 			_slow_mo()
 		else:
 			Sfx.play(&"clink", -3.0))
+	# Anyone still standing (their cup got knocked away) sits back down.
+	tw.tween_interval(0.8)
+	tw.tween_callback(func() -> void:
+		for g in guests:
+			if g.alive and not g.is_down() and not g.is_ghost:
+				if g.holding():
+					g.release_cup(self, layout.cup_spots[g.seat])
+				g.sit_back_down())
 
 
 ## A beat of slow motion when someone goes down (for the clips).

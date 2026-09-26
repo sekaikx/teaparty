@@ -94,13 +94,19 @@ func _me() -> Dictionary:
 
 # ---------------------------------------------------------------- open / close
 
-func solo() -> void:
+func solo(bots: int = 3) -> void:
 	_reset()
 	is_solo = true
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	_enter_as_host()
-	for i in 3:
+	for i in bots:
 		add_bot()
+
+
+## PLAY NOW: straight into a 6-guest party with bots, no lobby.
+func quick_play() -> void:
+	solo(5)
+	start_match.call_deferred()
 
 
 func host_game(port: int = DEFAULT_PORT) -> Error:

@@ -78,6 +78,8 @@ const TITLES := {
 	&"poltergeist": {"name": "Poltergeist", "stat": &"rattles", "need": 25},
 	&"untouchable": {"name": "The Untouchable", "stat": &"wins", "need": 5},
 	&"butler": {"name": "The Butler Did It", "stat": &"butler_wins", "need": 1},
+	&"sharpshooter": {"name": "Sharpshooter", "stat": &"cake_hits", "need": 15},
+	&"angel": {"name": "Guardian Angel", "stat": &"saves", "need": 3},
 	&"host": {"name": "Hostess with the Mostest", "stat": &"level", "need": 5},
 	&"dowager": {"name": "Dowager", "stat": &"level", "need": 10},
 }

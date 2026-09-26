@@ -6,6 +6,7 @@ extends Node
 ##   --speed=N              run timers N times faster
 ##   --shots=DIR            save screenshots at each phase into DIR (needs a real renderer)
 ##   --matches=N            play N matches back to back (lobby between)
+##   --pace                 keep the real timers and print how long each phase takes + cake stats
 ## Prints "QA DONE <matches> matches" and quits; exit code 1 if a match never ended.
 
 var shots := ""
@@ -23,6 +24,10 @@ var _is_host := false
 var _join_ip := ""
 var _started := false
 var _took: Dictionary = {}
+var _pace := false
+var _phase_time: Dictionary = {}
+var _cake_stats: Dictionary = {}
+var _rounds := 0
 
 
 func _ready() -> void:
@@ -48,6 +53,8 @@ func _ready() -> void:
 			_join_ip = a.get_slice("=", 1)
 	Session.speed = speed
 	Session.match_over.connect(_on_over)
+	_pace = "--pace" in OS.get_cmdline_user_args()
+	Session.game_event.connect(_count_event)
 	_deadline = 600.0
 	if "--solo" in OS.get_cmdline_user_args():
 		_shot("title", 1.0)
@@ -70,7 +77,22 @@ func _ready() -> void:
 		Net.join_game(_join_ip)
 
 
+func _count_event(ev: Dictionary) -> void:
+	match String(ev.get("type", "")):
+		"cake":
+			var k := String(ev.get("hit", "miss")) + ("_ghost" if ev.get("ghost", false) else "")
+			_cake_stats[k] = int(_cake_stats.get(k, 0)) + 1
+			if ev.get("spilled", false):
+				_cake_stats["spilled"] = int(_cake_stats.get("spilled", 0)) + 1
+		"round":
+			_rounds += 1
+
+
 func _apply_rules() -> void:
+	if _pace:
+		Net.set_rule("room", room)
+		Net.set_rule("mode", mode)
+		return
 	Net.set_rule("room", room)
 	Net.set_rule("mode", mode)
 	Net.set_rule("pour_time", 12.0)
@@ -95,6 +117,14 @@ func _host_roster() -> void:
 func _on_over(res: Dictionary) -> void:
 	matches_done += 1
 	print("QA MATCH %d OVER: %s winners=%s award=%s" % [matches_done, res.get("reason", ""), str(res.get("winners", [])), str(res.get("award", {}))])
+	if _pace:
+		var total := 0.0
+		var parts: Array[String] = []
+		for ph: int in _phase_time:
+			total += float(_phase_time[ph])
+			parts.append("%s %.0fs" % [Defs.Phase.keys()[ph], float(_phase_time[ph]) / maxi(_rounds, 1)])
+		print("QA PACE rounds=%d match=%.0fs per-round avg: %s" % [_rounds, total, ", ".join(parts)])
+		print("QA CAKES %s awards=%s" % [str(_cake_stats), str(res.get("awards", []))])
 	_shot("results", 2.5)
 	await get_tree().create_timer(3.5).timeout
 	if matches_done >= matches_wanted:
@@ -106,6 +136,8 @@ func _on_over(res: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	if Session.running:
+		_phase_time[Session.phase] = float(_phase_time.get(Session.phase, 0.0)) + delta * speed
 	_deadline -= delta
 	if _deadline <= 0.0:
 		push_error("QA timeout: match did not finish")
@@ -119,6 +151,9 @@ func _process(delta: float) -> void:
 	if ph != _last_phase:
 		_last_phase = ph
 		_wait = randf_range(0.5, 1.5) / speed
+		if _pace:
+			# Roughly how long a first-time player takes to act in each phase.
+			_wait = ({Defs.Phase.POUR: 8.0, Defs.Phase.ITEMS: 6.0, Defs.Phase.TALK: 15.0} as Dictionary).get(ph, 0.5) / speed
 		if ph == Defs.Phase.POUR or ph == Defs.Phase.DEAL:
 			_brain.new_round(Session.public)
 		var key := "%s_r%d" % [Defs.PHASE_NAMES[ph].to_lower().replace(" ", "_").replace("!", ""), int(Session.public.get("round", 0))]

@@ -1,33 +1,38 @@
 # Tea Party
 
-A poisoned tea party for 3 to 8 friends. You're wobbly jelly beans with googly eyes: you pour
-tea for your neighbour, slip something into it, lie about it, throw cake at each other, and then
-everyone drinks at once. Someone turns green, shakes, and ragdolls out of their chair. The dead
-come back as ghosts. Made in **Godot 4.7** (Forward+).
+A poisoned tea party for 3 to 8 friends. You're chunky, floppy little aristocrats with googly
+eyes. You pour tea for your neighbour, slip something into it, and lie about it. Then everyone
+raises their cup for the toast, and that's when the cakes fly: **hit a raised cup and it spills**
+(that could save a life or waste an antidote), **hit a face and they ragdoll off their chair**.
+Then everyone drinks. Someone turns green and collapses, and the game says who poisoned them. The dead
+come back as ghosts with cakes of their own. Made in **Godot 4.7** (Forward+).
 
 ## Quick start
 
 1. Install **Godot 4.7** (standard, not .NET).
 2. In Godot, **Import** and choose `project.godot`, then press **F5**.
-3. Click **PLAY WITH BOTS**, then **START THE PARTY!**
+3. Click **PLAY NOW!** You're at a table with 5 bots within about 3 seconds.
 
-The first time you play, a 5-card tutorial explains everything. You can open it again with
-**HOW TO PLAY** on the title screen or in the pause menu. During a match, the yellow **coach** banner at the top
-always says what to do next, and a bouncing arrow points at what to click.
+During a match, the **coach** banner at the top always says what to do next, and a bouncing arrow
+points at what to click. **HOW TO PLAY** (title screen or pause menu) has the full rules. After a
+match, **PLAY AGAIN!** starts the next one right away.
 
 ## How it plays
 
 | Step | What you do |
 |---|---|
 | **1 POUR** | Click **your teapot**, then click the **glowing cup** of the guest on your left. Then **drag one card** from your secret tray (bottom left; hover it or hold Tab to see it) into that cup. |
-| **2 ITEMS** | On your turn, click an item card (bottom right), then click its target(s). **Swap** two cups, **Sniff** a cup for poison (sugar hides it), **Force a Toast** (that guest drinks right now), **Peek** at a guest's cards. Or **PASS**. |
-| **3 TALK** | Hold **V** to talk, **Q** for emotes, **F** to throw a cupcake at someone's face. Then press **READY TO DRINK**. |
-| **4 DRINK** | Everyone stands and drinks. More poison than antidote in your cup means you're dead. |
+| **2 ITEMS** | **Everyone picks at the same time.** Click an item card (bottom right), then its target(s). **Swap** two cups, **Sniff** a cup for poison (sugar hides it), **Force a Toast** (that guest drinks right now), **Peek** at a guest's cards. Or **PASS**. Then the items go off one by one: sniffs and peeks first, then swaps, then toasts. |
+| **3 TALK** | Hold **V** to talk, **Q** for emotes. The coach reminds you who poured your cup and what you put in. Press **READY TO DRINK**. |
+| **4 TOAST** | Everyone stands and raises their cup for 5 seconds. **F** throws a cake at the point under your mouse: hitting a **cup** spills it (nobody drinks it), hitting a **face** knocks that guest down and makes them drop their cup. Then everyone drinks. More poison than antidote means you're dead, and a sign over your body names the poisoner. |
 
 Cards: **Poison** kills. **Antidote** cancels one poison in the same cup. **Sugar** makes a sniff
 useless. **Plain** does nothing. Every round has more poison, and from round 5 the pot itself is laced.
-**Ghosts** can see inside every cup and can rattle cups to warn or trick the living. Only other
-ghosts can hear them. The **last guest alive wins**.
+**Ghosts** can see inside every cup. They can rattle cups to warn or trick the living, and they get
+2 cakes per round of their own, so during the toast a ghost can save a friend or knock the antidote out of an
+enemy's hand. Only other ghosts can hear them. The **last guest alive wins**, and the results screen
+gives out awards (Master Poisoner, Sharpshooter, Guardian Angel, Butterfingers, Cake Magnet...)
+that pay extra coins.
 
 Modes: **Classic**, **Teams** (Earl Grey vs Darjeeling), and **The Butler** (a hidden player who
 can secretly spike any cup). Rooms: **the Parlour**, **Garden Party** and **Royal Banquet** (8 seats).
@@ -64,22 +69,24 @@ Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
 | Tab (hold) | Uncover your secret tray |
 | V (hold) | Push to talk |
 | Q / middle mouse (hold) | Emote wheel |
-| F | Throw a cupcake at the point under the mouse |
+| F | Throw a cupcake at the point under the mouse (hit raised cups during the toast!) |
 | Enter | Ready to drink |
 | Right-drag / wheel | Look around / lean in |
 | Esc | Pause menu (also cancels an item) |
 
 ## Friendslop features
 
-- **Bean guests.** Everything is procedural: googly eyes whose pupils slosh around under
-  physics, a mouth that flaps when you talk on voice chat, eyebrows that show mood, white gloves,
-  hats and face accessories that always fit.
-- **Real ragdolls.** On a death, every body part becomes a rigid body pinned to its
-  neighbours. Chairs get knocked over, hats pop off, cups fly off the table, and bodies stay on the
-  floor for the rest of the match. There are 8 death styles, including *Face in the Cake*,
-  *Pirouette*, *Confetti Pop*, *Ascension* and *The Yeet*.
-- **Cupcakes.** Throw them at anyone (6 per round). A hit makes their head snap back, spins
-  their eyes and leaves frosting on their face. Bots throw them too.
+- **Chunky guests.** Procedural, jointed humanoids: a big soft head, neck, barrel chest, belt,
+  upper and lower arms, oversized mitts, shorts, legs and boots, all made of pillowy rounded blocks.
+  Skin and hair colour come from the player's name. The googly pupils slosh around, the mouth flaps
+  when you talk on voice chat, and the eyebrows show mood. Hats and face accessories always fit.
+- **Ragdolls you cause.** A cake to the face turns the guest into a ragdoll (11 rigid bodies
+  joined with cone-twist limits). They flop off the chair, drop what they're holding, and 2 seconds later
+  snap back upright and say "I'M FINE". Deaths use the same ragdoll but stay down for the rest of the
+  match, with the chair tipping, the hat popping off and the cup flying. There are 8 death styles
+  (*Face in the Cake*, *Pirouette*, *Confetti Pop*, *Ascension*, *The Yeet*...).
+- **Cakes that matter.** 3 per round (2 for ghosts). The host decides what each cake hits, so everyone
+  sees the same outcome online.
 - **Slow-mo reveal.** The camera turns to whoever is collapsing, time slows down, and the screen shows
   POISONED!. If you're the one dying, a death cam shows your own collapse.
 - **Helium voices** lobby toggle: squeaky voice chat.
@@ -99,7 +106,7 @@ autoload/      Keys, Sfx (buses, helium), Profile (save / levels / cosmetics), S
                bridge: init, lobbies, invites, browser), Net (solo / LAN / Steam, lobby), Session
                (host-authoritative match, RPCs, bots, cakes), Voice (push-to-talk)
 scripts/core/  defs.gd, rules.gd (TeaRules: the game as data), bot_brain.gd, cosmetics.gd
-scripts/world/ guest.gd (bean characters, poses, googly eyes, ragdolls, ghosts), cake.gd,
+scripts/world/ guest.gd (jointed guests, poses, googly eyes, knockdown + death ragdolls, ghosts), cake.gd,
                tea_cup.gd, teapot.gd, tableware.gd, hats.gd, room_builder.gd (rooms + colliders), mats.gd
 scripts/game/  table_view.gd (camera, coach arrow, picking, events -> animation, slow-mo)
 scripts/ui/    ui.gd (the style), game_hud.gd, tutorial.gd, main_menu.gd, online_panel.gd,
@@ -119,7 +126,10 @@ godot --headless --path . -- --qa --host --speed=6 &                   # host + 
 godot --headless --path . -- --qa --join=127.0.0.1 --speed=6
 godot --headless --path . -- --qa --tool=res://tools/test_voice_codec.gd
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --solo --shots=/tmp/shots          # every phase
-xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/bean_test.gd    # beans, cakes, ragdolls, ghosts
+xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/bean_test.gd    # guests, cakes, ragdolls, ghosts
+xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/char_closeup.gd # studio renders + knockdown/recover
+godot --headless --path . -- --qa --tool=res://tools/quickplay_test.gd  # PLAY NOW lands in a 6-seat match
+godot --headless --path . -- --qa --solo --pace --speed=8               # real timers: seconds per phase + cake hit stats
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/ui_shots.gd     # menus
 python3 tools/audio/synth_tea_audio.py                                 # regenerate sounds (numpy, scipy, soundfile)
 ```
@@ -142,6 +152,6 @@ python3 tools/audio/synth_tea_audio.py                                 # regener
   on Steam misbehaves, the lobby / invite code is in `autoload/steamworks.gd`.
 - The Steam peer only carries channel 0, so voice uses channel 0 too. Voice is basic
   mu-law audio with no echo cancellation.
-- Physics (ragdolls, flying cups, cakes) runs locally on every client. Everyone sees the same
-  deaths and throws, but the bodies can land in slightly different places for each player.
+- Cake hits are decided by the host, but ragdoll physics runs locally, so bodies can land in
+  slightly different places for each player.
 - Progression is saved locally and trusted.

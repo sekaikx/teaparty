@@ -184,5 +184,12 @@ func _show_results(res: Dictionary) -> void:
 			else:
 				_show_title())
 		r.leave.connect(func() -> void: Net.leave())
+		r.play_again.connect(func() -> void:
+			Sfx.set_helium(false)
+			if Net.can_start() == "":
+				Net.start_match()
+			else:
+				_show_lobby()
+				toast(Net.can_start()))
 		_set_screen(r)
 		r.show_result(res, Session.my_seat))

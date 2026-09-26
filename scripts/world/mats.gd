@@ -131,3 +131,58 @@ static func box(size: Vector3) -> BoxMesh:
 	var b := BoxMesh.new()
 	b.size = size
 	return b
+
+
+static var _softboxes: Dictionary = {}
+
+
+## A pillowy rounded box (a superellipsoid): chunky, soft-cornered and readable, the building
+## block of the guests. `size` is the full extent, `round` 0 = sharp box .. 1 = sphere,
+## `taper` scales the top face relative to the bottom (x, z), `bulge` puffs the middle.
+static func softbox(size: Vector3, round_amt: float = 0.45, taper: Vector2 = Vector2.ONE, bulge: float = 0.0) -> ArrayMesh:
+	var key := "%s_%.2f_%s_%.2f" % [size, round_amt, taper, bulge]
+	if _softboxes.has(key):
+		return _softboxes[key]
+	var e := clampf(round_amt, 0.08, 1.0)
+	var lat := 14
+	var lon := 20
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var pts: Array[PackedVector3Array] = []
+	for i in lat + 1:
+		var row := PackedVector3Array()
+		var v := PI * i / lat - PI / 2.0
+		for j in lon + 1:
+			var u := TAU * j / lon
+			var cv := cos(v)
+			var sv := sin(v)
+			var x := _spow(cv, e) * _spow(cos(u), e)
+			var y := _spow(sv, e)
+			var z := _spow(cv, e) * _spow(sin(u), e)
+			var t := (y + 1.0) * 0.5
+			var tx := lerpf(1.0, taper.x, t)
+			var tz := lerpf(1.0, taper.y, t)
+			var b := 1.0 + bulge * (1.0 - y * y)
+			row.append(Vector3(x * size.x * 0.5 * tx * b, y * size.y * 0.5, z * size.z * 0.5 * tz * b))
+		pts.append(row)
+	for i in lat:
+		for j in lon:
+			var a := pts[i][j]
+			var b2 := pts[i + 1][j]
+			var c := pts[i + 1][j + 1]
+			var d := pts[i][j + 1]
+			st.add_vertex(a)
+			st.add_vertex(c)
+			st.add_vertex(b2)
+			st.add_vertex(a)
+			st.add_vertex(d)
+			st.add_vertex(c)
+	st.index()
+	st.generate_normals()
+	var m := st.commit()
+	_softboxes[key] = m
+	return m
+
+
+static func _spow(v: float, e: float) -> float:
+	return signf(v) * pow(absf(v), e)

@@ -47,6 +47,20 @@ func _run() -> void:
 	app.call(&"_close_overlay")
 	Net.solo()
 	await _shot("lobby", 1.2)
+	# A made-up 6-guest result with a full set of awards.
+	var seats: Array = []
+	for i in 6:
+		seats.append({"name": ["Sir Crumpet", "Duchess Earl", "Countess Chai", "Guest 1", "Colonel Scone", "Lady Marmalade"][i],
+			"alive": i == 4, "died_round": i + 1, "kills": i % 3, "team": -1, "role": &"guest"})
+	var awards: Array = []
+	for spec: Array in [["MASTER POISONER", "2 guests poisoned"], ["SHARPSHOOTER", "4 cake(s) to the face"], ["GUARDIAN ANGEL", "knocked away 3 deadly cup(s)"],
+			["BUTTERFINGERS", "spilled 3 cup(s)"], ["CAKE MAGNET", "took 3 cake(s) to the face"], ["FIRST TO FALL", "down in round 1"]]:
+		awards.append({"seat": awards.size() % 6, "title": spec[0], "desc": spec[1]})
+	var r := ResultsScreen.new()
+	app.call(&"_set_screen", r)
+	r.show_result({"winners": [4], "seats": seats, "reason": "Colonel Scone is the last guest standing.", "awards": awards,
+		"award": {"xp": 45, "coins": 25, "levels": 0, "level": 3, "titles": [], "unlocks": []}}, 3)
+	await _shot("results", 1.0)
 	get_tree().quit()
 
 

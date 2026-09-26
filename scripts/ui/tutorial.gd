@@ -14,13 +14,13 @@ const PAGES := [
 		"text": "You get secret cards. Drag ONE into their cup.\nPOISON kills. ANTIDOTE cancels one poison. SUGAR hides the smell. PLAIN does nothing."},
 	{"title": "3. PLAY A DIRTY TRICK", "color": Color("4cc9f0"),
 		"icons": [["item", Defs.Item.SWAP], ["item", Defs.Item.SNIFF], ["item", Defs.Item.TOAST], ["item", Defs.Item.PEEK]],
-		"text": "On your turn play one item.\nSWAP two cups. SNIFF a cup for poison. TOAST makes someone drink NOW. PEEK at someone's cards."},
+		"text": "Everyone secretly picks one item at the same time.\nSWAP two cups. SNIFF a cup for poison. TOAST makes someone drink NOW. PEEK at someone's cards."},
 	{"title": "4. LIE TO YOUR FRIENDS", "color": Color("c3a6ff"),
 		"icons": [["key", "V"], ["key", "Q"], ["key", "F"]],
-		"text": "Hold V to talk, Q for emotes, F to throw a cake at someone's face. Accuse, bluff, beg. Then hit READY TO DRINK."},
-	{"title": "5. EVERYBODY DRINKS", "color": Color("3ddc97"),
+		"text": "Hold V to talk, Q for emotes. Accuse, bluff, beg. Then hit READY TO DRINK."},
+	{"title": "5. THE TOAST: CAKES!", "color": Color("3ddc97"),
 		"icons": [["ing", Defs.Ingredient.POISON], ["arrow"], ["ghost"]],
-		"text": "Everyone drinks at once. More poison than antidote? You're dead, and you come back as a ghost who can rattle cups to warn (or trick) the living. More poison every round. LAST ONE ALIVE WINS."},
+		"text": "Everyone raises their cup. Press F to throw cake: hit a CUP and it spills, hit a FACE and they drop it. Then everyone drinks. More poison than antidote? You're dead, and you come back as a ghost (with cakes). LAST ONE ALIVE WINS."},
 ]
 
 var _page := 0

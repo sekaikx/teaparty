@@ -49,11 +49,15 @@ func _unit() -> void:
 	check(r.smell(1) == "poison", "cup 1 smells of poison")
 	check(r.smell(0) == "clean", "cup 0 clean")
 	# Swap 1 <-> 0 by hand, then the table drinks.
+	for s in 4:
+		r.seats[s]["items"] = []
 	r.seats[0]["items"] = [Defs.Item.SWAP]
 	r.begin_items()
-	check(r.current_turn() == 0, "seat 0 starts round 1")
-	var res := r.use_item(0, 0, [0, 1])
-	check(res["ok"], "swap ok")
+	check(r.choose_item(0, 0, [0, 1]) == "", "swap locked in")
+	check(r.choose_item(0, 0, [0, 1]) != "", "no double pick")
+	check(r.items_done(), "everyone else had no items")
+	var steps := r.resolve_items()
+	check(steps.size() == 1, "one step")
 	check(r.smell(0) == "poison" and r.smell(1) == "clean", "cups moved")
 	var drinks := r.drink_all()
 	check(drinks.size() == 4, "4 drinks")
@@ -90,11 +94,12 @@ func _unit() -> void:
 		r3.pour(s, 0)
 	r3.seats[0]["items"] = [Defs.Item.TOAST]
 	r3.begin_items()
-	check(r3.use_item(0, 0, [0])["ok"] == false, "cannot toast yourself")
-	var t := r3.use_item(0, 0, [1])
-	check(t["ok"], "toast ok")
+	check(r3.choose_item(0, 0, [0]) != "", "cannot toast yourself")
+	check(r3.choose_item(0, 0, [1]) == "", "toast ok")
+	r3.resolve_items()
 	check(not r3.is_alive(1), "toasted guest drank poison")
-	check(r3.current_turn() == 2, "turn skips the dead")
+	var bl := TeaRules.blame([{"k": I.POISON, "by": 0}], {})
+	check((bl["poisoners"] as Array) == [0], "blame names the poisoner")
 	check(r3.check_winner()["over"] == false, "two alive")
 
 	# Laced pot from round N puts poison in every cup.
@@ -136,6 +141,8 @@ func _unit() -> void:
 func _simulate(m: StringName, n: int, count: int) -> void:
 	var rounds_total := 0
 	var butler_wins := 0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = n * 101
 	for game in count:
 		var r := TeaRules.new()
 		r.setup(_players(n), {"mode": m}, game * 7919 + n)
@@ -160,23 +167,29 @@ func _simulate(m: StringName, n: int, count: int) -> void:
 			check(r.all_poured(), "all poured")
 			r.begin_items()
 			var over := false
-			while not r.items_done():
-				var s := r.current_turn()
+			for s in r.alive_seats():
+				if r.seats[s]["item_done"]:
+					continue
 				var choice := bots[s].choose_item(r.private_state(s), r.public_state())
 				if choice.is_empty():
 					r.pass_turn(s)
 				else:
-					var res := r.use_item(s, choice["index"], choice["targets"])
-					check(res["ok"], "bot item ok: %s" % res["error"])
-					if not res["ok"]:
+					var err := r.choose_item(s, choice["index"], choice["targets"])
+					check(err == "", "bot item ok: %s" % err)
+					if err != "":
 						r.pass_turn(s)
-					for ev: Dictionary in res["private"]:
-						bots[s].on_private_event(ev, r.public_state())
-				var w := r.check_winner()
-				if w["over"]:
-					result = w
-					over = true
-					break
+			check(r.items_done(), "all picked")
+			for step: Dictionary in r.resolve_items():
+				for ev: Dictionary in step["private"]:
+					bots[int(step["seat"])].on_private_event(ev, r.public_state())
+			# Some cakes land on cups.
+			if rng.randf() < 0.3 and not r.alive_seats().is_empty():
+				var al := r.alive_seats()
+				r.spill(al[rng.randi_range(0, al.size() - 1)], al[0])
+			var w := r.check_winner()
+			if w["over"]:
+				result = w
+				over = true
 			if over:
 				break
 			r.drink_all()

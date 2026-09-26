@@ -306,6 +306,8 @@ func _parlor() -> void:
 	fire.light_energy = 2.2
 	fire.omni_range = 9.0
 	fire.shadow_enabled = true
+	fire.shadow_bias = 0.08
+	fire.shadow_normal_bias = 2.0
 	fire.position = Vector3(0, 0.9, 1.0)
 	fp.add_child(fire)
 	var ftw := fire.create_tween().set_loops()
@@ -350,6 +352,8 @@ func _parlor() -> void:
 	lamp.light_energy = 1.6
 	lamp.omni_range = 8.0
 	lamp.shadow_enabled = true
+	lamp.shadow_bias = 0.08
+	lamp.shadow_normal_bias = 2.0
 	lamp.position = Vector3(0, 3.6, 0)
 	root.add_child(lamp)
 	Mats.mesh(root, Mats.torus(0.5, 0.58, 24), Mats.gold(), Vector3(0, 3.9, 0))
@@ -365,6 +369,8 @@ func _garden() -> void:
 	sun.light_color = Color("fff1d6")
 	sun.light_energy = 1.3
 	sun.shadow_enabled = true
+	sun.shadow_bias = 0.08
+	sun.shadow_normal_bias = 2.0
 	sun.rotation_degrees = Vector3(-50, -35, 0)
 	sun.directional_shadow_max_distance = 40.0
 	root.add_child(sun)
@@ -488,6 +494,8 @@ func _banquet() -> void:
 		l.light_energy = 2.0
 		l.omni_range = 9.0
 		l.shadow_enabled = true
+		l.shadow_bias = 0.08
+		l.shadow_normal_bias = 2.0
 		ch.add_child(l)
 	var barrel := _load(VILLAGE + "barrel.gltf")
 	var crate := _load(VILLAGE + "crate_A_big.gltf")

@@ -19,11 +19,11 @@ const INGREDIENTS := {
 
 const ITEMS := {
 	Item.SWAP: {"name": "Swap", "targets": 2, "target": &"cup",
-		"desc": "Swap two cups on the table. Everyone sees the cups move."},
+		"desc": "Swap two cups on the table (after the sniffs). Everyone sees the cups move."},
 	Item.SNIFF: {"name": "Sniff", "targets": 1, "target": &"cup",
 		"desc": "Sniff a cup: you alone learn if it smells of poison (sugar hides it)."},
 	Item.TOAST: {"name": "Force a Toast", "targets": 1, "target": &"guest",
-		"desc": "Raise a toast to a guest: they must drink their cup right now."},
+		"desc": "Raise a toast to a guest: they must drink their cup right now (after the swaps)."},
 	Item.PEEK: {"name": "Peek", "targets": 1, "target": &"guest",
 		"desc": "Peek at a guest's tray: the ingredients they did not pour, and their items."},
 }
@@ -58,9 +58,9 @@ const DEFAULT_RULES := {
 	"mode": &"classic",
 	"max_players": 6,
 	"hand_size": 3,
-	"pour_time": 25.0,
+	"pour_time": 20.0,
 	"item_turn_time": 15.0,
-	"talk_time": 60.0,
+	"talk_time": 35.0,
 	"items_per_round": 1,
 	"max_items": 2,
 	"laced_round": 5,
