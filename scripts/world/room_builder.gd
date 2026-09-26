@@ -63,13 +63,7 @@ func _place_seats(room: StringName, count: int) -> void:
 	pot_spots.clear()
 	chairs.clear()
 	card_spots.clear()
-	var angles: Array[float] = []
-	if room == &"banquet" and count == 8:
-		for a in [0.0, 42.0, 90.0, 138.0, 180.0, 222.0, 270.0, 318.0]:
-			angles.append(deg_to_rad(a))
-	else:
-		for i in count:
-			angles.append(TAU * i / count + PI / 2.0)
+	var angles := _even_angles(count, PI / 2.0)
 	var chair := _load(FURN + "chair_A_wood.gltf")
 	for a in angles:
 		var edge := Vector3(cos(a) * table_radii.x, 0, sin(a) * table_radii.y)
@@ -79,7 +73,7 @@ func _place_seats(room: StringName, count: int) -> void:
 		var xf := Transform3D(basis, pos)
 		seats.append(xf)
 		cup_spots.append(Vector3(edge.x, TABLE_Y, edge.z) - out * 0.42 + Vector3(0, 0.02, 0))
-		pot_spots.append(Vector3(edge.x, TABLE_Y, edge.z) - out * 0.55 + basis * Vector3(-0.55, 0, 0) + Vector3(0, 0.02, 0))
+		pot_spots.append(Vector3(edge.x, TABLE_Y, edge.z) - out * 0.62 + basis * Vector3(-0.45, 0, 0) + Vector3(0, 0.02, 0))
 		card_spots.append(Vector3(edge.x, TABLE_Y, edge.z) - out * 0.16 + basis * Vector3(0.42, 0, 0))
 		_place_card(Vector3(edge.x, TABLE_Y, edge.z) - out * 0.16 + basis * Vector3(0.42, 0, 0), basis)
 		if chair:
@@ -101,6 +95,28 @@ func _place_card(pos: Vector3, basis: Basis) -> void:
 	Mats.mesh(card, Mats.box(Vector3(0.3, 0.14, 0.006)), paper, Vector3(0, 0.06, 0.03), Vector3(-25, 0, 0))
 	Mats.mesh(card, Mats.box(Vector3(0.3, 0.14, 0.006)), paper, Vector3(0, 0.06, -0.03), Vector3(25, 0, 0))
 	Mats.mesh(card, Mats.box(Vector3(0.26, 0.004, 0.006)), Mats.gold(), Vector3(0, 0.02, 0.058), Vector3(-25, 0, 0))
+
+
+## Angles around the table ellipse that are evenly spaced by arc length (so seats don't crowd
+## at the narrow ends of an oval table), starting at `start`.
+func _even_angles(count: int, start: float) -> Array[float]:
+	var steps := 720
+	var arc: Array[float] = [0.0]
+	var prev := Vector2(cos(start) * table_radii.x, sin(start) * table_radii.y)
+	for i in range(1, steps + 1):
+		var a := start + TAU * i / steps
+		var p := Vector2(cos(a) * table_radii.x, sin(a) * table_radii.y)
+		arc.append(arc[i - 1] + p.distance_to(prev))
+		prev = p
+	var total: float = arc[steps]
+	var out: Array[float] = []
+	var j := 0
+	for k in count:
+		var want := total * k / count
+		while j < steps and arc[j + 1] < want:
+			j += 1
+		out.append(start + TAU * j / steps)
+	return out
 
 
 func _table(cloth: Color, trim: Color) -> void:

@@ -120,26 +120,18 @@ func _build_feed() -> void:
 
 
 func _build_bottom() -> void:
-	var bottom := VBoxContainer.new()
-	UiKit.pin(bottom, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -12))
-	bottom.alignment = BoxContainer.ALIGNMENT_END
-	bottom.add_theme_constant_override("separation", 8)
-	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(bottom)
+	# Tray bottom-left, items and buttons bottom-right: the middle stays clear for your own cup.
 	_prompt_box = UiKit.panel(&"chip")
-	_prompt_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_prompt_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bottom.add_child(_prompt_box)
+	_root.add_child(_prompt_box)
+	UiKit.pin(_prompt_box, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -44))
 	_prompt = UiKit.label("", 16, Color(), &"sans", 750)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_prompt_box.add_child(_prompt)
-	var row := UiKit.hbox(14)
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bottom.add_child(row)
 	_tray_panel = UiKit.panel(&"paper")
 	_tray_panel.mouse_filter = Control.MOUSE_FILTER_PASS
-	row.add_child(_tray_panel)
+	_root.add_child(_tray_panel)
+	UiKit.pin(_tray_panel, Vector2(0, 1), Vector2(0, 1), Vector2(14, -40))
 	var tv := UiKit.vbox(4)
 	tv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tray_panel.add_child(tv)
@@ -149,20 +141,14 @@ func _build_bottom() -> void:
 	_tray.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tray.custom_minimum_size = Vector2(92, 118)
 	tv.add_child(_tray)
-	_items_panel = UiKit.panel(&"paper")
-	_items_panel.mouse_filter = Control.MOUSE_FILTER_PASS
-	row.add_child(_items_panel)
-	var iv := UiKit.vbox(4)
-	iv.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_items_panel.add_child(iv)
-	iv.add_child(UiKit.label("Items", 12, UiKit.hs.text_soft, &"sans", 800))
-	_items = UiKit.hbox(6)
-	_items.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_items.custom_minimum_size = Vector2(92, 118)
-	iv.add_child(_items)
+	var right := UiKit.hbox(10)
+	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(right)
+	UiKit.pin(right, Vector2(1, 1), Vector2(1, 1), Vector2(-14, -40))
 	var bv := UiKit.vbox(8)
-	bv.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_child(bv)
+	bv.alignment = BoxContainer.ALIGNMENT_END
+	bv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	right.add_child(bv)
 	_pass = UiKit.button("Pass", func() -> void:
 		table.cancel_targeting()
 		Session.request_pass())
@@ -171,9 +157,20 @@ func _build_bottom() -> void:
 	_ready = UiKit.button("Ready to drink", func() -> void: Session.request_ready_up())
 	_ready.custom_minimum_size = Vector2(140, 38)
 	bv.add_child(_ready)
+	_items_panel = UiKit.panel(&"paper")
+	_items_panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	right.add_child(_items_panel)
+	var iv := UiKit.vbox(4)
+	iv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_items_panel.add_child(iv)
+	iv.add_child(UiKit.label("Items", 12, UiKit.hs.text_soft, &"sans", 800))
+	_items = UiKit.hbox(6)
+	_items.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_items.custom_minimum_size = Vector2(92, 118)
+	iv.add_child(_items)
 	_ptt = UiKit.label("", 13, UiKit.hs.light, &"sans", 800)
-	UiKit.pin(_ptt, Vector2(0, 1), Vector2(0, 1), Vector2(16, -14))
 	_root.add_child(_ptt)
+	UiKit.pin(_ptt, Vector2(0, 1), Vector2(0, 1), Vector2(16, -12))
 
 
 func _build_big() -> void:

@@ -47,6 +47,7 @@ var _ghost: Node3D
 var _hl: bool = false
 var _meshes: Array[MeshInstance3D] = []
 var _held_cup: Node3D
+var _area: Area3D
 ## The chair this guest sits on (knocked over when they collapse).
 var chair: Node3D
 var _chair_home := Transform3D()
@@ -62,6 +63,7 @@ func setup(p_seat: int, info: Dictionary) -> void:
 	_build_model()
 	_build_tags(info)
 	var area := Area3D.new()
+	_area = area
 	area.collision_layer = 4
 	area.collision_mask = 0
 	area.set_meta(&"guest", self)
@@ -160,6 +162,8 @@ func _tag(font: Font, size: int, color: Color, y: float) -> Label3D:
 ## LOCAL_LAYER, which the table camera leaves out (except for the death cam).
 func set_local(on: bool) -> void:
 	is_local = on
+	# The first-person camera sits inside your own pick capsule; you never click yourself.
+	_area.collision_layer = 0 if on else 4
 	_name_tag.visible = not on
 	_title_tag.visible = not on
 	for mi in _meshes:

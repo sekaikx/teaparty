@@ -304,7 +304,7 @@ func _left_press(pos: Vector2) -> void:
 		_drop_teapot(pos)
 		return
 	if can_pour_tea():
-		var hit := _ray(pos, 2)
+		var hit := _ray(pos, 8)
 		if not hit.is_empty() and (hit["collider"] as Object).has_meta(&"teapot"):
 			var pot: Teapot = (hit["collider"] as Object).get_meta(&"teapot")
 			if pot.seat == my_seat and not pot.busy:

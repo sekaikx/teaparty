@@ -1,7 +1,7 @@
 class_name Teapot
 extends Node3D
 ## A guest's teapot. pour_into() plays the whole lift - tilt - stream - return; the local
-## player can also drag it (follow()) before letting it pour. Clickable (layer 2, meta "teapot").
+## player can also drag it (follow()) before letting it pour. Clickable (layer 8, meta "teapot").
 
 const SCALE := 0.85
 
@@ -27,7 +27,7 @@ func setup(p_seat: int, body: Color, trim: Color) -> void:
 	_shell = Mats.mesh(_pot, Mats.sphere(0.24, 0.4), Mats.highlight(Color("f0c75a")), Vector3(0, 0.17, 0), Vector3.ZERO, Vector3(1.1, 1, 1.1))
 	_shell.visible = false
 	var area := Area3D.new()
-	area.collision_layer = 2
+	area.collision_layer = 8
 	area.collision_mask = 0
 	area.set_meta(&"teapot", self)
 	var shape := CollisionShape3D.new()
