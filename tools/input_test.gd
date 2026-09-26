@@ -11,6 +11,7 @@ var _fails := 0
 func _ready() -> void:
 	Profile.ephemeral = true
 	Profile.xp = 2000
+	Profile.settings["tutorial_seen"] = true
 	_run()
 
 

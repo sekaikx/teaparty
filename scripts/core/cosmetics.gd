@@ -29,25 +29,41 @@ const CUPS := {
 }
 
 const DEATHS := {
-	&"swoon": {"name": "The Swoon", "price": 0, "level": 1, "desc": "A classic faint."},
-	&"keel": {"name": "Keel Over", "price": 0, "level": 1, "desc": "Straight back, like a plank."},
-	&"stagger": {"name": "The Stagger", "price": 120, "level": 2, "desc": "Clutch, wobble, down."},
-	&"monologue": {"name": "Last Words", "price": 200, "level": 3, "desc": "One raised hand, one final speech."},
-	&"spin": {"name": "Pirouette", "price": 260, "level": 4, "desc": "A twirl on the way down."},
-	&"confetti": {"name": "Confetti Pop", "price": 400, "level": 6, "desc": "Goes out with a bang."},
-	&"ascend": {"name": "Ascension", "price": 600, "level": 8, "desc": "Straight up to the great tea room in the sky."},
+	&"swoon": {"name": "The Swoon", "price": 0, "level": 1, "desc": "Clutch the pearls, flop backwards."},
+	&"keel": {"name": "Face in the Cake", "price": 0, "level": 1, "desc": "Straight into the table. Cups everywhere."},
+	&"stagger": {"name": "The Wobbler", "price": 120, "level": 2, "desc": "Spins, wobbles, crumples."},
+	&"monologue": {"name": "Last Words", "price": 200, "level": 3, "desc": "A dramatic final speech, then down."},
+	&"spin": {"name": "Pirouette", "price": 260, "level": 4, "desc": "Launched into a spin like a top."},
+	&"confetti": {"name": "Confetti Pop", "price": 400, "level": 6, "desc": "Goes out with a bang and a shower of confetti."},
+	&"ascend": {"name": "Ascension", "price": 600, "level": 8, "desc": "The body floats off to the great tea room in the sky."},
+	&"yeet": {"name": "The Yeet", "price": 800, "level": 9, "desc": "Blasted clean across the room."},
 }
 
-## model + tint (multiplied over the KayKit texture).
+## Bean colours: body, then the collar / cheeks accent.
 const SKINS := {
-	&"knight": {"name": "Sir Knight", "price": 0, "level": 1, "model": &"knight", "tint": Color(1, 1, 1)},
-	&"rogue": {"name": "The Stranger", "price": 0, "level": 1, "model": &"rogue", "tint": Color(1, 1, 1)},
-	&"knight_rose": {"name": "Rosy Knight", "price": 90, "level": 1, "model": &"knight", "tint": Color(1.0, 0.78, 0.8)},
-	&"rogue_moss": {"name": "Moss Stranger", "price": 90, "level": 2, "model": &"rogue", "tint": Color(0.78, 1.0, 0.78)},
-	&"knight_sky": {"name": "Sky Knight", "price": 150, "level": 3, "model": &"knight", "tint": Color(0.75, 0.88, 1.0)},
-	&"rogue_plum": {"name": "Plum Stranger", "price": 150, "level": 3, "model": &"rogue", "tint": Color(0.88, 0.72, 1.0)},
-	&"knight_gold": {"name": "Golden Knight", "price": 450, "level": 6, "model": &"knight", "tint": Color(1.0, 0.9, 0.55)},
-	&"rogue_ash": {"name": "Ash Stranger", "price": 450, "level": 6, "model": &"rogue", "tint": Color(0.62, 0.62, 0.66)},
+	&"cream": {"name": "Buttermilk", "price": 0, "level": 1, "body": Color("ffe3b8"), "accent": Color("ff8fab")},
+	&"mint": {"name": "Peppermint", "price": 0, "level": 1, "body": Color("8ee3c0"), "accent": Color("2f9e74")},
+	&"berry": {"name": "Raspberry", "price": 0, "level": 1, "body": Color("ff6f91"), "accent": Color("ffd166")},
+	&"sky": {"name": "Blue Moon", "price": 60, "level": 1, "body": Color("7cc6fe"), "accent": Color("ffffff")},
+	&"lemon": {"name": "Lemon Curd", "price": 60, "level": 1, "body": Color("ffe066"), "accent": Color("ff7b54")},
+	&"grape": {"name": "Grape Jelly", "price": 120, "level": 2, "body": Color("a78bfa"), "accent": Color("fde68a")},
+	&"tangerine": {"name": "Marmalade", "price": 120, "level": 2, "body": Color("ff9f43"), "accent": Color("5f27cd")},
+	&"matcha": {"name": "Matcha", "price": 180, "level": 3, "body": Color("9bc53d"), "accent": Color("fff5cc")},
+	&"earl": {"name": "Earl Grey", "price": 240, "level": 4, "body": Color("8d99ae"), "accent": Color("ef233c")},
+	&"choc": {"name": "Hot Cocoa", "price": 300, "level": 5, "body": Color("8b5e3c"), "accent": Color("ffd6a5")},
+	&"gold": {"name": "Golden Tip", "price": 600, "level": 7, "body": Color("f4c430"), "accent": Color("ffffff")},
+}
+
+## Face accessories.
+const FACES := {
+	&"none": {"name": "Bare face", "price": 0, "level": 1},
+	&"moustache": {"name": "Handlebar Moustache", "price": 0, "level": 1},
+	&"monocle": {"name": "Monocle", "price": 90, "level": 1},
+	&"glasses": {"name": "Round Specs", "price": 90, "level": 1},
+	&"blush": {"name": "Rosy Cheeks", "price": 60, "level": 1},
+	&"nose": {"name": "Clown Nose", "price": 150, "level": 2},
+	&"shades": {"name": "Cool Shades", "price": 220, "level": 3},
+	&"beard": {"name": "Wizard Beard", "price": 320, "level": 5},
 }
 
 ## Titles unlock by lifetime stats (or level) and are free to wear.
@@ -66,9 +82,9 @@ const TITLES := {
 	&"dowager": {"name": "Dowager", "stat": &"level", "need": 10},
 }
 
-const CATEGORIES := {&"hat": HATS, &"cup": CUPS, &"death": DEATHS, &"skin": SKINS}
+const CATEGORIES := {&"hat": HATS, &"face": FACES, &"cup": CUPS, &"death": DEATHS, &"skin": SKINS}
 
-const DEFAULT_EQUIP := {&"hat": &"top_hat", &"cup": &"porcelain", &"death": &"swoon", &"skin": &"knight", &"title": &"newcomer"}
+const DEFAULT_EQUIP := {&"hat": &"top_hat", &"face": &"moustache", &"cup": &"porcelain", &"death": &"swoon", &"skin": &"cream", &"title": &"newcomer"}
 
 
 static func entry(category: StringName, id: StringName) -> Dictionary:
@@ -89,6 +105,6 @@ static func random_look(rng: RandomNumberGenerator) -> Dictionary:
 		return keys[rng.randi_range(0, keys.size() - 1)]
 	var t: Array = TITLES.keys()
 	return {
-		"hat": pick.call(HATS), "cup": pick.call(CUPS), "death": pick.call(DEATHS),
+		"hat": pick.call(HATS), "face": pick.call(FACES), "cup": pick.call(CUPS), "death": pick.call(DEATHS),
 		"skin": pick.call(SKINS), "title": t[rng.randi_range(0, t.size() - 1)],
 	}

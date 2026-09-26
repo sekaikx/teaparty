@@ -37,6 +37,11 @@ var _shake := 0.0
 var _drinking: Dictionary = {}
 var _cam_base: Transform3D
 var _bird_timer := 5.0
+## Slow-motion and camera focus on whoever just collapsed.
+var _focus := Vector3.INF
+var _focus_until := 0
+var _arrow: Node3D
+var _arrow_target := Vector3.INF
 
 
 func build(roster: Array, rules: Dictionary, seat: int) -> void:
@@ -50,6 +55,7 @@ func build(roster: Array, rules: Dictionary, seat: int) -> void:
 		g.transform = layout.seats[i]
 		g.setup(i, info)
 		g.chair = layout.chairs[i]
+		g.splashed_table.connect(_on_splash)
 		g.place_tags(to_global(layout.card_spots[i] + Vector3(0, 0.3, 0)))
 		guests.append(g)
 		if not info.get("bot", false):
@@ -85,10 +91,76 @@ func build(roster: Array, rules: Dictionary, seat: int) -> void:
 	Session.state_changed.connect(_on_state)
 	if my_seat >= 0:
 		guests[my_seat].set_local(true)
+	_arrow = _make_arrow()
+	add_child(_arrow)
+
+
+## The coach's bouncing arrow that floats over whatever you should click next.
+func _make_arrow() -> Node3D:
+	var a := Node3D.new()
+	var body := Node3D.new()
+	body.name = "Bob"
+	a.add_child(body)
+	var fill := Mats.glow(Color("ffc93c"), 1.2)
+	var ink := Mats.highlight(Color("1d1128"))
+	Mats.mesh(body, Mats.cylinder(0.0, 0.16, 0.22, 16), fill, Vector3(0, 0.11, 0), Vector3(180, 0, 0))
+	Mats.mesh(body, Mats.cylinder(0.06, 0.06, 0.22, 12), fill, Vector3(0, 0.33, 0))
+	var shell := Mats.mesh(body, Mats.cylinder(0.0, 0.19, 0.27, 16), Mats.solid(Color("1d1128")), Vector3(0, 0.11, 0), Vector3(180, 0, 0))
+	shell.material_override = ink
+	var tw := body.create_tween().set_loops()
+	tw.tween_property(body, "position:y", 0.18, 0.35).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(body, "position:y", 0.0, 0.35).set_trans(Tween.TRANS_SINE)
+	a.visible = false
+	return a
+
+
+func _update_arrow(delta: float) -> void:
+	var target := Vector3.INF
+	if can_pour_tea():
+		if _held:
+			var cup := cup_at_seat(pour_target())
+			if cup:
+				target = cup.global_position + Vector3(0, 0.35, 0)
+		else:
+			target = pots[my_seat].global_position + Vector3(0, 0.38, 0)
+	elif can_drop_card():
+		var cup := cup_at_seat(pour_target())
+		if cup:
+			target = cup.global_position + Vector3(0, 0.35, 0)
+	_arrow.visible = target != Vector3.INF
+	if target != Vector3.INF:
+		_arrow.global_position = target if _arrow_target == Vector3.INF else _arrow.global_position.lerp(target, clampf(delta * 10.0, 0, 1))
+		_arrow.rotation.y += delta * 2.0
+	_arrow_target = target
+
+
+func _on_splash(g: Guest) -> void:
+	# A faceplant into the table sends the nearby (empty) cups flying.
+	if not Session.phase in [P.DRINK, P.REVEAL]:
+		return
+	for id: int in cups:
+		var cup: TeaCup = cups[id]
+		var d := cup.global_position.distance_to(g.global_position)
+		if d < 1.8:
+			cup.fling(Vector3(randf_range(-2, 2), randf_range(3.5, 6.0), randf_range(-2, 2)))
+	Sfx.play(&"toast", -2.0)
+
+
+## Mouse-aimed cupcake (F).
+func throw_cake() -> void:
+	if not Session.am_alive() or Session.cakes_left() <= 0:
+		return
+	var m := get_viewport().get_mouse_position()
+	var from := camera.project_ray_origin(m)
+	var dir := camera.project_ray_normal(m)
+	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 30.0, Guest.L_WORLD | Guest.L_HITBOX | Guest.L_RAGDOLL)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	Session.request_throw(hit["position"] if not hit.is_empty() else from + dir * 6.0)
 
 
 func _exit_tree() -> void:
 	Voice.detach_all()
+	Engine.time_scale = 1.0
 
 
 func _on_speaking(peer: int, on: bool) -> void:
@@ -109,16 +181,20 @@ func _place_camera(snap: bool) -> void:
 		if Time.get_ticks_msec() < _death_cam_until:
 			# Watch your own collapse from across your shoulder.
 			camera.cull_mask = 0xFFFFF
-			var eye := s.origin + s.basis * Vector3(-1.6, 0, 1.7) + Vector3(0, 2.3, 0)
-			t = Transform3D(Basis(), eye).looking_at(s.origin + s.basis * Vector3(0, 0, -0.4) + Vector3(0, 0.7, 0), Vector3.UP)
+			var eye := s.origin + s.basis * Vector3(-1.4, 0, 1.2) + Vector3(0, 2.4, 0)
+			t = Transform3D(Basis(), eye).looking_at(s.origin + s.basis * Vector3(0, 0, -1.0) + Vector3(0, 0.3, 0), Vector3.UP)
 		elif alive:
-			# First person from your seat (your head and hat are hidden from you).
-			var eye := s.origin + s.basis * Vector3(0, 0, -0.55 - _zoom * 0.5) + Vector3(0, 2.2 + _zoom * 0.35, 0)
+			# First person from your bean's eyes (your own head and hat are hidden from you).
+			var eye := s.origin + s.basis * Vector3(0, 0, -0.32 - _zoom * 0.6) + Vector3(0, 1.72 + _zoom * 0.5, 0)
 			t = Transform3D(Basis(), eye).looking_at(centre, Vector3.UP)
 		else:
 			# A ghost floats above its chair.
-			var eye := s.origin + s.basis * Vector3(0, 0, -1.0 - _zoom * 0.5) + Vector3(0, 3.5 + _zoom * 0.35, 0)
+			var eye := s.origin + s.basis * Vector3(0, 0, -0.8 - _zoom * 0.5) + Vector3(0, 2.9 + _zoom * 0.35, 0)
 			t = Transform3D(Basis(), eye).looking_at(centre, Vector3.UP)
+		if Time.get_ticks_msec() < _focus_until and _focus != Vector3.INF and Time.get_ticks_msec() >= _death_cam_until:
+			# Turn to watch whoever is collapsing.
+			var look := Transform3D(Basis(), t.origin).looking_at(_focus, Vector3.UP)
+			t.basis = t.basis.slerp(look.basis, 0.75)
 		t.basis = Basis(Vector3.UP, _orbit) * t.basis * Basis(Vector3.RIGHT, _pitch)
 	else:
 		t = Transform3D(Basis(), Vector3(0, 7.5, 6.5)).looking_at(Vector3(0, 0.6, 0), Vector3.UP)
@@ -143,6 +219,9 @@ func _process(delta: float) -> void:
 		if p != Vector3.INF:
 			_held.follow(to_local(p), delta)
 	_update_highlights()
+	_update_arrow(delta)
+	if Input.is_action_just_pressed(&"throw_cake") and not get_viewport().gui_get_focus_owner() is LineEdit:
+		throw_cake()
 	if layout.outdoor:
 		_bird_timer -= delta
 		if _bird_timer <= 0.0:
@@ -417,6 +496,12 @@ func _on_state() -> void:
 func _on_event(ev: Dictionary) -> void:
 	match String(ev.get("type", "")):
 		"round":
+			for g in guests:
+				g.release_cup(self, layout.cup_spots[g.seat])
+			_drinking.clear()
+			for id: int in cups:
+				(cups[id] as TeaCup).restore()
+				(cups[id] as TeaCup).position = layout.cup_spots[(cups[id] as TeaCup).seat]
 			tea_poured = false
 			card_dropped = false
 			spiked = false
@@ -462,8 +547,8 @@ func _on_event(ev: Dictionary) -> void:
 			guests[int(ev["seat"])].say("*peeks*", 1.4)
 			Sfx.play(&"page", -4.0)
 		"toast":
-			guests[int(ev["seat"])].gesture(&"Cheer")
-			guests[int(ev["seat"])].say("A toast to %s!" % Session.seat_name(int(ev["target"])), 2.0)
+			guests[int(ev["seat"])].point_at(guests[int(ev["target"])].head_position())
+			guests[int(ev["seat"])].say("A TOAST TO %s!" % Session.seat_name(int(ev["target"])).to_upper(), 2.0)
 			Sfx.play(&"toast")
 		"drink":
 			_play_drinks([ev], 0.6)
@@ -483,20 +568,29 @@ func _on_event(ev: Dictionary) -> void:
 			var cup := cup_at_seat(int(ev["target"]))
 			if cup:
 				cup.rattle()
-			guests[int(ev["seat"])].gesture(&"Spellcast_Shoot")
+			guests[int(ev["seat"])].gesture(&"spook")
 		"emote":
 			var e: Dictionary = Defs.EMOTES[int(ev["emote"])]
 			var g := guests[int(ev["seat"])]
-			g.say(e["line"], 2.4, Color(0.75, 0.88, 1.0) if g.is_ghost else Color("fff4d8"))
+			g.say(e["line"], 2.4, Color("3a5a9a") if g.is_ghost else Ui.INK)
 			g.gesture(e["clip"])
 			Sfx.play_at(e["sound"], g.head_position(), -6.0, 0.15)
 		"ready":
-			guests[int(ev["seat"])].say("Ready!", 1.5, Color("b8e08a"))
+			guests[int(ev["seat"])].say("READY!", 1.5, Color("1f7a4d"))
 			Sfx.play(&"tick", -6.0)
 		"pass":
-			guests[int(ev["seat"])].say("Pass." if not ev.get("timeout", false) else "...", 1.2)
+			guests[int(ev["seat"])].say("pass" if not ev.get("timeout", false) else "zzz...", 1.2)
 		"countdown":
 			Sfx.play(&"drumroll", -2.0)
+		"cake":
+			var g := guests[int(ev["seat"])]
+			var to: Vector3
+			if ev.has("target"):
+				to = guests[int(ev["target"])].head_position()
+			else:
+				to = ev["to"]
+			g.point_at(to)
+			Cake.throw_from(self, g.head_position() + g.global_transform.basis * Vector3(-0.35, -0.1, 0.4), to, g, int(ev["seed"]))
 		"spike_done", "pour_mine", "auto_pour", "sniff_result", "peek_result", "error", "note":
 			pass
 
@@ -527,14 +621,27 @@ func _play_drinks(drinks: Array, delay: float) -> void:
 				cup.set_filled(false)
 				_drinking.erase(cup.cup_id)
 			if d["died"]:
+				if not any_death:
+					_focus = g.head_position()
+					_focus_until = Time.get_ticks_msec() + 3500
 				any_death = true
 				var t := g.die()
 				if g.seat == my_seat:
-					_death_cam_until = Time.get_ticks_msec() + int((t + 1.6) * 1000.0)
+					_death_cam_until = Time.get_ticks_msec() + int((t + 1.8) * 1000.0)
 			else:
 				g.sit_back_down()
 		if any_death:
 			shake(0.18)
 			Sfx.play(&"sting", -2.0)
+			_slow_mo()
 		else:
 			Sfx.play(&"clink", -3.0))
+
+
+## A beat of slow motion when someone goes down (for the clips).
+func _slow_mo() -> void:
+	var tw := get_tree().create_tween().set_ignore_time_scale(true)
+	tw.tween_interval(0.85)
+	tw.tween_callback(func() -> void: Engine.time_scale = 0.35)
+	tw.tween_interval(1.1)
+	tw.tween_method(func(v: float) -> void: Engine.time_scale = v, 0.35, 1.0, 0.5)

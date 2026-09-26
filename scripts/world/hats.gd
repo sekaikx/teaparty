@@ -1,14 +1,12 @@
 class_name Hats
 extends RefCounted
-## Procedural hats, built around the KayKit head (about 1.1 wide, its crown ~1.0 above the Head bone).
-
-const BASE_Y := 0.93
+## Procedural hats, modelled for a head about 1.1 wide; Guest scales them to its bean head and
+## sets the position, so every hat sits on the crown the same way.
 
 
 static func build(id: StringName) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Hat"
-	root.position = Vector3(0, BASE_Y, 0.02)
 	match id:
 		&"top_hat":
 			var felt := Mats.solid(Color("1d1a1f"), 0.7)

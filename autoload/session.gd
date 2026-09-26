@@ -213,6 +213,7 @@ func _set_phase(p: int, seconds: float) -> void:
 
 func _start_round() -> void:
 	_rules.start_round()
+	_cakes.clear()
 	_pending_end = {}
 	var pub := _rules.public_state()
 	for s: int in _bots:
@@ -286,6 +287,10 @@ func _finish(res: Dictionary) -> void:
 func _push(total: float = -1.0) -> void:
 	var pub := _rules.public_state()
 	pub["phase"] = phase
+	var cakes := {}
+	for k: int in _cakes:
+		cakes[str(k)] = _cakes[k]
+	pub["cakes"] = cakes
 	pub["left"] = maxf(_timer, 0.0)
 	pub["total"] = total if total >= 0.0 else float(public.get("total", _timer))
 	_recv_public.rpc(pub)
@@ -379,6 +384,15 @@ func request_emote(emote: int) -> void:
 	_call_host(&"_rq_emote", [emote])
 
 
+## Lob a cupcake at a point on the table / a guest (pure chaos, no game effect).
+func request_throw(target: Vector3) -> void:
+	_call_host(&"_rq_throw", [target])
+
+
+func cakes_left() -> int:
+	return int(public.get("cakes", {}).get(str(my_seat), CAKES_PER_ROUND))
+
+
 func _sender_seat() -> int:
 	var id := multiplayer.get_remote_sender_id()
 	if id == 0:
@@ -423,6 +437,28 @@ func _rq_ready() -> void:
 func _rq_rattle(target: int) -> void:
 	if hosting() and phase in [P.ITEMS, P.TALK, P.POUR]:
 		_do_rattle(_sender_seat(), target)
+
+
+const CAKES_PER_ROUND := 6
+const CAKE_COOLDOWN := 1.2
+var _cakes: Dictionary = {}
+var _cake_ready: Dictionary = {}
+
+
+@rpc("any_peer", "reliable")
+func _rq_throw(target: Vector3) -> void:
+	if not hosting() or phase in [P.INTRO, P.MATCH_END]:
+		return
+	var s := _sender_seat()
+	if s < 0 or not _rules.is_alive(s):
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now < float(_cake_ready.get(s, 0.0)) or int(_cakes.get(s, CAKES_PER_ROUND)) <= 0:
+		return
+	_cake_ready[s] = now + CAKE_COOLDOWN
+	_cakes[s] = int(_cakes.get(s, CAKES_PER_ROUND)) - 1
+	_emit({"type": "cake", "seat": s, "to": target.clamp(Vector3(-12, -1, -12), Vector3(12, 6, 12)), "seed": _rng.randi()})
+	_push(float(public.get("total", _timer)))
 
 
 @rpc("any_peer", "unreliable")
@@ -509,6 +545,13 @@ func _tick_bots(dt: float) -> void:
 			_bot_chatter[s] -= dt
 			if _bot_chatter[s] <= 0.0:
 				_bot_chatter[s] = _rng.randf_range(6.0, 16.0)
+				if _rng.randf() < 0.4 and int(_cakes.get(s, CAKES_PER_ROUND)) > 0:
+					var others := _rules.alive_seats()
+					others.erase(s)
+					if not others.is_empty():
+						_cakes[s] = int(_cakes.get(s, CAKES_PER_ROUND)) - 1
+						_emit({"type": "cake", "seat": s, "target": others[_rng.randi_range(0, others.size() - 1)], "seed": _rng.randi()})
+						continue
 				_emit({"type": "emote", "seat": s, "emote": b.chatter_emote(_rules.private_state(s), _rules.public_state())})
 		if not _bot_wait.has(s):
 			continue

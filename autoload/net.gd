@@ -4,6 +4,7 @@ extends Node
 ##   Net.solo()                      host a private table for you and bots
 ##   Net.host_game(port)             open a table others can join on your LAN / over port forward
 ##   Net.join_game(ip, port)
+##   Net.host_steam(public) / Steamworks.join_lobby(id)   online over Steam (Spacewar, App ID 480)
 ## The roster maps peer id -> {id, name, level, cos, bot, ready}. Bots use ids from BOT_ID_BASE.
 
 signal roster_changed
@@ -19,6 +20,7 @@ const BOT_ID_BASE := 1_000_000
 var roster: Dictionary = {}
 var rules: Dictionary = Defs.default_rules()
 var is_solo := false
+var is_steam := false
 var in_lobby := false
 var _next_bot := 0
 var _bot_rng := RandomNumberGenerator.new()
@@ -31,6 +33,49 @@ func _ready() -> void:
 	multiplayer.connection_failed.connect(func() -> void: _fail("Could not reach that table."))
 	multiplayer.server_disconnected.connect(func() -> void: leave("The host closed the table."))
 	_bot_rng.randomize()
+	Steamworks.lobby_entered.connect(_on_steam_lobby_entered)
+	Steamworks.lobby_failed.connect(func(reason: String) -> void: _fail(reason))
+
+
+## Host a tea party on Steam: friends join from the invite overlay, the browser or the code.
+func host_steam(public: bool) -> Error:
+	if not Steamworks.available:
+		_fail(Steamworks.reason)
+		return ERR_UNAVAILABLE
+	_reset()
+	var peer := Steamworks.make_peer()
+	var err: Error = peer.call(&"create_host", 0)
+	if err != OK:
+		_fail("Couldn't open a Steam connection (%s)." % error_string(err))
+		return err
+	multiplayer.multiplayer_peer = peer
+	is_steam = true
+	_enter_as_host()
+	Steamworks.create_lobby(public, int(rules["max_players"]))
+	return OK
+
+
+var joining := false
+
+
+func join_steam_pending() -> void:
+	joining = true
+
+
+func _on_steam_lobby_entered(_lobby: int, owner: int) -> void:
+	_reset()
+	var peer := Steamworks.make_peer()
+	var err: Error = peer.call(&"create_client", owner, 0)
+	if err != OK:
+		_fail("Couldn't connect to the host over Steam (%s)." % error_string(err))
+		return
+	multiplayer.multiplayer_peer = peer
+	is_steam = true
+
+
+## The code friends type to join (the Steam lobby id).
+func steam_code() -> String:
+	return str(Steamworks.lobby_id) if is_steam and Steamworks.lobby_id != 0 else ""
 
 
 func is_host() -> bool:
@@ -42,7 +87,8 @@ func my_id() -> int:
 
 
 func _me() -> Dictionary:
-	return {"id": my_id(), "name": Profile.player_name, "level": Profile.level(), "cos": Profile.look(),
+	var nm := Steamworks.friendly_name() if Steamworks.available and Profile.use_steam_name else Profile.player_name
+	return {"id": my_id(), "name": nm, "level": Profile.level(), "cos": Profile.look(),
 		"bot": false, "ready": false}
 
 
@@ -83,6 +129,8 @@ func join_game(ip: String, port: int = DEFAULT_PORT) -> Error:
 func leave(reason: String = "") -> void:
 	var was := in_lobby or multiplayer.multiplayer_peer != null
 	Session.abort()
+	if is_steam:
+		Steamworks.leave_lobby()
 	if multiplayer.multiplayer_peer:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
@@ -95,6 +143,8 @@ func _reset() -> void:
 	roster.clear()
 	rules = Defs.default_rules()
 	is_solo = false
+	is_steam = false
+	joining = false
 	in_lobby = false
 	_next_bot = 0
 
@@ -115,6 +165,8 @@ func _fail(reason: String) -> void:
 	if multiplayer.multiplayer_peer:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
+	if is_steam:
+		Steamworks.leave_lobby()
 	_reset()
 	connection_failed.emit(reason)
 
@@ -298,4 +350,5 @@ func start_match() -> void:
 		var t: Variant = players[i]
 		players[i] = players[j]
 		players[j] = t
+	Steamworks.set_lobby_joinable(false)
 	Session.host_start(players, rules.duplicate(true))

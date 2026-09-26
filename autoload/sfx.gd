@@ -27,6 +27,9 @@ const SOUNDS := {
 	&"sit_down": "res://audio/sfx/sit_down.ogg", &"stand_up": "res://audio/sfx/stand_up.ogg",
 	&"chest": "res://audio/sfx/chest_open.ogg", &"magic": "res://audio/sfx/rune_wake.ogg",
 	&"flutter": "res://audio/sfx/wing_flutter.ogg",
+	&"bonk": "res://audio/sfx/bonk.ogg", &"splat": "res://audio/sfx/splat.ogg",
+	&"slide_whistle": "res://audio/sfx/slide_whistle.ogg", &"pop": "res://audio/sfx/pop.ogg",
+	&"whoosh": "res://audio/sfx/whoosh.ogg", &"boing": "res://audio/sfx/boing.ogg", &"kazoo": "res://audio/sfx/kazoo.ogg",
 	&"bird_1": "res://audio/ambience/bird_01.ogg", &"bird_2": "res://audio/ambience/bird_03.ogg",
 	&"bird_3": "res://audio/ambience/bird_05.ogg", &"owl": "res://audio/ambience/owl_01.ogg",
 }
@@ -84,8 +87,19 @@ func _make_buses() -> void:
 		var cap := AudioEffectCapture.new()
 		cap.buffer_length = 0.5
 		AudioServer.add_bus_effect(mic, cap)
+	var voice := AudioServer.get_bus_index(&"Voice")
+	if AudioServer.get_bus_effect_count(voice) == 0:
+		var pitch := AudioEffectPitchShift.new()
+		pitch.pitch_scale = 1.6
+		AudioServer.add_bus_effect(voice, pitch)
+		AudioServer.set_bus_effect_enabled(voice, 0, false)
 	# Muted after the capture effect, so you never hear your own microphone.
 	AudioServer.set_bus_mute(mic, true)
+
+
+## Helium voices: a lobby rule that pitch-shifts voice chat way up.
+func set_helium(on: bool) -> void:
+	AudioServer.set_bus_effect_enabled(AudioServer.get_bus_index(&"Voice"), 0, on)
 
 
 func stream(id: StringName) -> AudioStream:

@@ -28,6 +28,7 @@ var _took: Dictionary = {}
 func _ready() -> void:
 	Profile.ephemeral = true
 	Profile.xp = 2000   # everything unlocked for testing
+	Profile.settings["tutorial_seen"] = true
 	Profile.coins = 5000
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shots="):
@@ -171,6 +172,8 @@ func _autoplay() -> void:
 			if Session.am_alive() and not bool(Session.seat_info(Session.my_seat).get("ready", false)):
 				if randf() < 0.3:
 					Session.request_emote(randi() % Defs.EMOTES.size())
+				if randf() < 0.5:
+					Session.request_throw(Vector3(randf_range(-1, 1), 1.3, randf_range(-1, 1)))
 				Session.request_ready_up()
 
 

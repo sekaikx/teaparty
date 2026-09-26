@@ -13,7 +13,8 @@ signal speaking_changed(peer_id: int, on: bool)
 const RATE := 16000
 const PACKET := 320            # samples per packet (20 ms)
 const HOLD := 0.35             # seconds a speaker stays "speaking" after their last packet
-const CHANNEL := 1
+## Channel 0: SteamMultiplayerPeer only carries channel 0.
+const CHANNEL := 0
 
 var transmitting := false
 var mic_error := ""

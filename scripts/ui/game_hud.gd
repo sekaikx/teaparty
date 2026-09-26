@@ -1,25 +1,32 @@
 class_name GameHud
 extends CanvasLayer
-## Everything drawn over the table: the phase banner and clock, the guest list, the event feed,
-## the hidden tray (drag ingredients onto the table), item cards, prompts, private results
-## (sniff / peek), the countdown, the reveal board, the emote wheel and the pause menu.
+## Everything over the table, built so a first-timer always knows what to do:
+##   top      the step tracker (1 POUR > 2 ITEMS > 3 TALK > 4 DRINK) with a countdown pie,
+##            and under it the coach: one big instruction ("CLICK YOUR TEAPOT") + a hint
+##   left     who's at the table (poured / choosing / ready / ghost / talking)
+##   right    what just happened
+##   bottom   your secret tray (left), items + buttons (right), key hints (centre)
+##   centre   stamps ("POISONED!", "ROUND 2"), sniff / peek results, the reveal board
+## Plus the emote wheel, the role card and the pause menu.
 
 signal leave_requested
 signal settings_requested
 
 const P := Defs.Phase
+const STEPS := [[P.POUR, "POUR"], [P.ITEMS, "ITEMS"], [P.TALK, "TALK"], [P.DRINK, "DRINK"]]
 
 var table: TableView
 
 var _root: Control
-var _phase: Label
-var _round: Label
-var _clock: ProgressBar
-var _clock_label: Label
+var _steps: Array[PanelContainer] = []
+var _round_chip: PanelContainer
+var _pie: TimerPie
+var _coach: PanelContainer
+var _coach_head: Label
+var _coach_sub: Label
+var _coach_text := ""
 var _guests: VBoxContainer
 var _feed: VBoxContainer
-var _prompt: Label
-var _prompt_box: PanelContainer
 var _tray_panel: PanelContainer
 var _tray: HBoxContainer
 var _tray_title: Label
@@ -27,8 +34,10 @@ var _items_panel: PanelContainer
 var _items: HBoxContainer
 var _pass: Button
 var _ready: Button
-var _big: Label
-var _big_tw: Tween
+var _keys: HBoxContainer
+var _cake_label: Label
+var _stamp: Label
+var _stamp_tw: Tween
 var _note: PanelContainer
 var _note_body: VBoxContainer
 var _note_tw: Tween
@@ -36,12 +45,11 @@ var _reveal: PanelContainer
 var _reveal_rows: VBoxContainer
 var _emotes: EmoteWheel
 var _pause: Control
-var _ptt: Label
-var _role: PanelContainer
 var _drag: TrayCard
 var _drag_ghost: TeaIcon
 var _tray_sig := ""
 var _items_sig := ""
+var _guest_sig := ""
 var _last_phase := -1
 
 
@@ -49,204 +57,197 @@ func setup(p_table: TableView) -> void:
 	table = p_table
 	layer = 5
 	_root = Control.new()
-	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
-	_build_banner()
-	_build_guests()
-	_build_feed()
+	_build_top()
+	_build_side()
 	_build_bottom()
-	_build_big()
-	_build_note()
-	_build_reveal()
+	_build_center()
 	_emotes = EmoteWheel.new()
 	_root.add_child(_emotes)
 	_emotes.chosen.connect(func(i: int) -> void: Session.request_emote(i))
 	_build_pause()
 	Session.state_changed.connect(_refresh)
 	Session.game_event.connect(_on_event)
-	table.prompt_changed.connect(_refresh_prompt)
+	table.prompt_changed.connect(_refresh_coach)
 	Voice.speaking_changed.connect(func(_p: int, _on: bool) -> void: _refresh_guests())
 	_refresh()
 
 
 # ---------------------------------------------------------------- layout
 
-func _build_banner() -> void:
-	var top := UiKit.panel(&"note")
-	UiKit.pin(top, Vector2(0.5, 0), Vector2(0.5, 0), Vector2(0, 10))
-	top.custom_minimum_size = Vector2(380, 0)
+func _build_top() -> void:
+	var top := Ui.vbox(10)
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.alignment = BoxContainer.ALIGNMENT_CENTER
 	_root.add_child(top)
-	var v := UiKit.vbox(2)
-	top.add_child(v)
-	var h := UiKit.hbox(10)
-	v.add_child(h)
-	_phase = UiKit.title("", 22)
-	_phase.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(_phase)
-	_round = UiKit.label("", 14, UiKit.hs.text_soft)
-	h.add_child(_round)
-	var h2 := UiKit.hbox(8)
-	v.add_child(h2)
-	_clock = ProgressBar.new()
-	_clock.show_percentage = false
-	_clock.custom_minimum_size = Vector2(0, 12)
-	_clock.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_clock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_clock.max_value = 1.0
-	UiKit.hs.style_bar(_clock)
-	h2.add_child(_clock)
-	_clock_label = UiKit.label("", 14, UiKit.hs.accent, &"sans", 800)
-	_clock_label.custom_minimum_size.x = 34
-	h2.add_child(_clock_label)
+	Ui.pin(top, Vector2(0.5, 0), Vector2(0.5, 0), Vector2(0, 12))
+	var row := Ui.hbox(8)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(row)
+	_round_chip = Ui.chip("ROUND 1", Ui.PINK, Ui.CREAM, 18)
+	row.add_child(_round_chip)
+	for i in STEPS.size():
+		var chip := Ui.chip("%d  %s" % [i + 1, STEPS[i][1]], Ui.PLUM_LIGHT, Ui.MUTED, 18)
+		row.add_child(chip)
+		_steps.append(chip)
+		if i < STEPS.size() - 1:
+			row.add_child(Ui.label(">", 20, Ui.MUTED, 700, 6))
+	_pie = TimerPie.new()
+	row.add_child(_pie)
+	_coach = PanelContainer.new()
+	_coach.add_theme_stylebox_override("panel", Ui.box(Ui.YELLOW, 20, 4, 6, Ui.INK, Vector4(24, 8, 24, 10)))
+	_coach.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_coach.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	top.add_child(_coach)
+	var cv := Ui.vbox(0)
+	cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_coach.add_child(cv)
+	_coach_head = Ui.title("", 30, Ui.INK)
+	_coach_head.remove_theme_constant_override("outline_size")
+	_coach_head.remove_theme_constant_override("shadow_outline_size")
+	_coach_head.add_theme_constant_override("shadow_offset_y", 0)
+	_coach_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cv.add_child(_coach_head)
+	_coach_sub = Ui.label("", 16, Ui.INK, 600)
+	_coach_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cv.add_child(_coach_sub)
+	_coach.resized.connect(func() -> void: _coach.pivot_offset = _coach.size * 0.5)
 
 
-func _build_guests() -> void:
-	var p := UiKit.panel(&"note")
-	UiKit.pin(p, Vector2.ZERO, Vector2.ZERO, Vector2(12, 12))
-	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(p)
-	_guests = UiKit.vbox(3)
-	p.add_child(_guests)
-
-
-func _build_feed() -> void:
-	_feed = UiKit.vbox(4)
-	UiKit.pin(_feed, Vector2(1, 0), Vector2(1, 0), Vector2(-12, 12))
-	_feed.custom_minimum_size = Vector2(318, 0)
+func _build_side() -> void:
+	_guests = Ui.vbox(6)
+	_guests.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_guests)
+	Ui.pin(_guests, Vector2(0, 0), Vector2(0, 0), Vector2(14, 14))
+	_feed = Ui.vbox(6)
 	_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_feed.custom_minimum_size = Vector2(300, 0)
 	_root.add_child(_feed)
+	Ui.pin(_feed, Vector2(1, 0), Vector2(1, 0), Vector2(-14, 14))
 
 
 func _build_bottom() -> void:
-	# Tray bottom-left, items and buttons bottom-right: the middle stays clear for your own cup.
-	_prompt_box = UiKit.panel(&"chip")
-	_prompt_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(_prompt_box)
-	UiKit.pin(_prompt_box, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -44))
-	_prompt = UiKit.label("", 16, Color(), &"sans", 750)
-	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_prompt_box.add_child(_prompt)
-	_tray_panel = UiKit.panel(&"paper")
+	_tray_panel = Ui.panel(Ui.PLUM, 22, Vector4(14, 10, 14, 14))
 	_tray_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	_root.add_child(_tray_panel)
-	UiKit.pin(_tray_panel, Vector2(0, 1), Vector2(0, 1), Vector2(14, -40))
-	var tv := UiKit.vbox(4)
+	Ui.pin(_tray_panel, Vector2(0, 1), Vector2(0, 1), Vector2(14, -14))
+	var tv := Ui.vbox(6)
 	tv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tray_panel.add_child(tv)
-	_tray_title = UiKit.label("Your tray  (hover or hold Tab)", 12, UiKit.hs.text_soft, &"sans", 800)
+	_tray_title = Ui.label("YOUR SECRET TRAY  (hover or hold TAB)", 15, Ui.YELLOW, 700)
 	tv.add_child(_tray_title)
-	_tray = UiKit.hbox(6)
+	_tray = Ui.hbox(8)
 	_tray.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_tray.custom_minimum_size = Vector2(92, 118)
+	_tray.custom_minimum_size = Vector2(TrayCard.W, TrayCard.H)
 	tv.add_child(_tray)
-	var right := UiKit.hbox(10)
+	var right := Ui.hbox(12)
 	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(right)
-	UiKit.pin(right, Vector2(1, 1), Vector2(1, 1), Vector2(-14, -40))
-	var bv := UiKit.vbox(8)
+	Ui.pin(right, Vector2(1, 1), Vector2(1, 1), Vector2(-14, -14))
+	var bv := Ui.vbox(10)
 	bv.alignment = BoxContainer.ALIGNMENT_END
 	bv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	right.add_child(bv)
-	_pass = UiKit.button("Pass", func() -> void:
+	_pass = Ui.button("PASS", func() -> void:
 		table.cancel_targeting()
-		Session.request_pass())
-	_pass.custom_minimum_size = Vector2(140, 38)
+		Session.request_pass(), Ui.LILAC, 22, Vector2(170, 56))
 	bv.add_child(_pass)
-	_ready = UiKit.button("Ready to drink", func() -> void: Session.request_ready_up())
-	_ready.custom_minimum_size = Vector2(140, 38)
+	_ready = Ui.button("READY TO DRINK", func() -> void: Session.request_ready_up(), Ui.MINT, 20, Vector2(200, 60))
 	bv.add_child(_ready)
-	_items_panel = UiKit.panel(&"paper")
+	_items_panel = Ui.panel(Ui.PLUM, 22, Vector4(14, 10, 14, 14))
 	_items_panel.mouse_filter = Control.MOUSE_FILTER_PASS
 	right.add_child(_items_panel)
-	var iv := UiKit.vbox(4)
+	var iv := Ui.vbox(6)
 	iv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_items_panel.add_child(iv)
-	iv.add_child(UiKit.label("Items", 12, UiKit.hs.text_soft, &"sans", 800))
-	_items = UiKit.hbox(6)
+	iv.add_child(Ui.label("YOUR ITEMS", 15, Ui.SKY, 700))
+	_items = Ui.hbox(8)
 	_items.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_items.custom_minimum_size = Vector2(92, 118)
+	_items.custom_minimum_size = Vector2(TrayCard.W, TrayCard.H)
 	iv.add_child(_items)
-	_ptt = UiKit.label("", 13, UiKit.hs.light, &"sans", 800)
-	_root.add_child(_ptt)
-	UiKit.pin(_ptt, Vector2(0, 1), Vector2(0, 1), Vector2(16, -12))
+	_keys = Ui.hbox(8)
+	_keys.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_keys)
+	Ui.pin(_keys, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -14))
+	_keys.add_child(_key_chip(Keys.label(&"push_to_talk"), "TALK"))
+	_keys.add_child(_key_chip(Keys.label(&"emote_wheel"), "EMOTES"))
+	var cake := _key_chip(Keys.label(&"throw_cake"), "THROW CAKE")
+	_cake_label = cake.get_meta(&"label")
+	_keys.add_child(cake)
+	_keys.add_child(_key_chip("RMB", "LOOK"))
 
 
-func _build_big() -> void:
-	_big = UiKit.title("", 64, UiKit.hs.light)
-	UiKit.pin(_big, Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0, -150))
-	_big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_big.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_big.add_theme_constant_override("outline_size", 14)
-	_big.add_theme_color_override("font_outline_color", Color(0.1, 0.06, 0.03, 0.8))
-	_big.visible = false
-	_root.add_child(_big)
+func _key_chip(key: String, what: String) -> PanelContainer:
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PLUM_DARK, 0.85), 14, 3, 3, Ui.INK, Vector4(6, 4, 12, 6)))
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var h := Ui.hbox(8)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(h)
+	h.add_child(Ui.chip(key, Ui.CREAM, Ui.INK, 15))
+	var l := Ui.label(what, 15, Ui.CREAM, 700)
+	h.add_child(l)
+	p.set_meta(&"label", l)
+	return p
 
 
-func _build_note() -> void:
-	_note = UiKit.panel(&"paper")
-	UiKit.pin(_note, Vector2(1, 0.5), Vector2(1, 0.5), Vector2(-16, -20))
-	_note.custom_minimum_size = Vector2(330, 0)
+func _build_center() -> void:
+	_stamp = Ui.title("", 84, Ui.PINK)
+	_stamp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_stamp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_stamp.visible = false
+	_root.add_child(_stamp)
+	Ui.pin(_stamp, Vector2(0.5, 0.45), Vector2(0.5, 0.5))
+	_note = Ui.panel(Ui.CREAM, 22)
 	_note.visible = false
 	_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_note)
-	_note_body = UiKit.vbox(6)
+	Ui.pin(_note, Vector2(0.5, 0.5), Vector2(0.5, 0.5), Vector2(0, 30))
+	_note_body = Ui.vbox(8)
 	_note.add_child(_note_body)
-
-
-func _build_reveal() -> void:
-	_reveal = UiKit.panel()
-	UiKit.pin(_reveal, Vector2(1, 0.5), Vector2(1, 0.5), Vector2(-16, -10))
-	_reveal.custom_minimum_size = Vector2(350, 0)
+	_reveal = Ui.panel(Ui.PLUM, 22)
 	_reveal.visible = false
 	_reveal.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_reveal)
-	var v := UiKit.vbox(6)
+	Ui.pin(_reveal, Vector2(1, 0.5), Vector2(1, 0.5), Vector2(-14, 20))
+	var v := Ui.vbox(8)
 	_reveal.add_child(v)
-	v.add_child(UiKit.title("The reveal", 24))
-	v.add_child(UiKit.hs.rule(2, 2))
-	_reveal_rows = UiKit.vbox(4)
+	v.add_child(Ui.title("WHAT WAS IN THE CUPS", 26, Ui.YELLOW))
+	_reveal_rows = Ui.vbox(6)
 	v.add_child(_reveal_rows)
 
 
 func _build_pause() -> void:
 	_pause = Control.new()
-	_pause.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_pause.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_pause.visible = false
 	_root.add_child(_pause)
-	UiKit.hs.add_backdrop(_pause, 0.45)
-	var p := UiKit.panel()
-	var v := UiKit.vbox(4)
+	Ui.backdrop(_pause, 0.7)
+	var p := Ui.panel()
+	var v := Ui.vbox(12)
 	p.add_child(v)
-	v.add_child(UiKit.title("Paused", 30))
-	v.add_child(UiKit.label("The party carries on without you.", 13, UiKit.hs.text_soft))
-	v.add_child(UiKit.hs.rule())
-	v.add_child(UiKit.menu_button("Back to the table", func() -> void: _pause.visible = false))
-	v.add_child(UiKit.menu_button("Settings", func() -> void: settings_requested.emit()))
-	v.add_child(UiKit.menu_button("How to play", func() -> void: _show_help()))
-	v.add_child(UiKit.menu_button("Leave the party", func() -> void: leave_requested.emit()))
-	_pause.add_child(UiKit.center(p))
-
-
-func _show_help() -> void:
-	_pause.visible = false
-	_note_show([
-		UiKit.title("How it plays", 20),
-		UiKit.wrap(UiKit.label(
-			"1. Pour: pick up your teapot, pour for the guest on your left, then drag one ingredient from your hidden tray into their cup.\n"
-			+ "2. Items: on your turn click an item card, then its targets (cups or guests). Swap moves cups, Sniff smells for poison (sugar hides it), a Toast makes a guest drink now, Peek shows a tray.\n"
-			+ "3. Talk: hold V to speak, Q for emotes. Bluff, accuse, beg.\n"
-			+ "4. Everyone drinks. More poison than antidote in your cup and you collapse, then haunt the table as a ghost who can rattle cups.\n"
-			+ "Right-drag to look around, scroll to zoom.", 13), 300)], 14.0)
+	v.add_child(Ui.title("PAUSED", 48))
+	v.add_child(Ui.label("(the party carries on without you)", 16, Ui.MUTED))
+	v.add_child(Ui.button("BACK TO THE TABLE", func() -> void: _pause.visible = false, Ui.MINT))
+	v.add_child(Ui.button("HOW TO PLAY", func() -> void:
+		_pause.visible = false
+		var t := Tutorial.new()
+		_root.add_child(t), Ui.YELLOW))
+	v.add_child(Ui.button("SETTINGS", func() -> void: settings_requested.emit(), Ui.SKY))
+	v.add_child(Ui.button("LEAVE THE PARTY", func() -> void: leave_requested.emit(), Ui.PINK))
+	_pause.add_child(Ui.center(p))
 
 
 # ---------------------------------------------------------------- per frame
 
 func _process(_delta: float) -> void:
 	var total := maxf(Session.phase_total, 0.01)
-	_clock.value = clampf(Session.phase_left / total, 0.0, 1.0) if Session.phase_total > 0.0 else 0.0
-	_clock_label.text = str(ceili(Session.phase_left)) if Session.phase_left > 0.0 and Session.phase in [P.POUR, P.ITEMS, P.TALK] else ""
+	_pie.fraction = clampf(Session.phase_left / total, 0.0, 1.0) if Session.phase in [P.POUR, P.ITEMS, P.TALK] else 0.0
+	_pie.seconds = ceili(Session.phase_left) if Session.phase in [P.POUR, P.ITEMS, P.TALK] else 0
+	_pie.queue_redraw()
 	var mouse := get_viewport().get_mouse_position()
 	var show := Input.is_action_pressed(&"peek_tray") or _tray_panel.get_global_rect().has_point(mouse) or _drag != null
 	for c in _tray.get_children():
@@ -254,8 +255,7 @@ func _process(_delta: float) -> void:
 			(c as TrayCard).set_revealed(show)
 	if _drag_ghost:
 		_drag_ghost.global_position = mouse - _drag_ghost.size * 0.5
-	var mic := "on" if Profile.settings.get("mic", true) else "muted"
-	_ptt.text = ("Speaking..." if Voice.transmitting else "Hold %s to talk (mic %s)   %s emotes   Esc menu" % [Keys.label(&"push_to_talk"), mic, Keys.label(&"emote_wheel")])
+	_cake_label.text = "THROW CAKE x%d" % Session.cakes_left() if Session.am_alive() else "RATTLE A CUP (click)"
 	if Input.is_action_just_pressed(&"emote_wheel") and not _pause.visible:
 		_emotes.open()
 	if Input.is_action_just_released(&"emote_wheel"):
@@ -276,11 +276,12 @@ func _input(event: InputEvent) -> void:
 			if table.drop_card((event as InputEventMouseButton).position, card.index, card.is_spike):
 				card.queue_free()
 			else:
-				Sfx.play(&"close", -8.0)
+				Sfx.play(&"boing", -8.0)
+				_wiggle_coach()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed(&"pause") and table.targeting < 0 and _drag == null:
 		_pause.visible = not _pause.visible
-		Sfx.play(&"open" if _pause.visible else &"close", -6.0)
+		Sfx.play(&"pop", -6.0)
 		get_viewport().set_input_as_handled()
 
 
@@ -289,78 +290,101 @@ func _start_drag(card: TrayCard) -> void:
 		if Session.phase != P.POUR or table.spiked:
 			return
 	elif not table.can_drop_card():
-		_flash_prompt()
+		_wiggle_coach()
+		Sfx.play(&"boing", -8.0)
 		return
 	_drag = card
 	card.modulate.a = 0.35
-	_drag_ghost = TeaIcon.make(TeaIcon.Kind.SPIKE if card.is_spike else TeaIcon.Kind.INGREDIENT, card.value, 64)
-	_drag_ghost.size = Vector2(64, 64)
+	_drag_ghost = TeaIcon.make(TeaIcon.Kind.SPIKE if card.is_spike else TeaIcon.Kind.INGREDIENT, card.value, 80)
+	_drag_ghost.size = Vector2(80, 80)
 	_root.add_child(_drag_ghost)
 	Sfx.play(&"card", -4.0)
 
 
-func _flash_prompt() -> void:
-	var tw := _prompt_box.create_tween()
-	tw.tween_property(_prompt_box, "modulate", Color(1.3, 0.8, 0.7), 0.1)
-	tw.tween_property(_prompt_box, "modulate", Color.WHITE, 0.3)
+func _wiggle_coach() -> void:
+	var tw := _coach.create_tween()
+	for i in 4:
+		tw.tween_property(_coach, "rotation", deg_to_rad(4.0 if i % 2 == 0 else -4.0), 0.05)
+	tw.tween_property(_coach, "rotation", 0.0, 0.05)
 
 
 # ---------------------------------------------------------------- state
 
 func _refresh() -> void:
 	var ph := Session.phase
-	_phase.text = Defs.PHASE_NAMES.get(ph, "")
 	var r := int(Session.public.get("round", 0))
-	_round.text = ("Round %d%s" % [r, "  -  laced pot" if Session.public.get("laced", false) else ""]) if r > 0 else ""
+	(_round_chip.get_child(0) as Label).text = ("ROUND %d%s" % [r, "  LACED POT" if Session.public.get("laced", false) else ""]) if r > 0 else "WELCOME"
+	for i in STEPS.size():
+		var on: bool = STEPS[i][0] == ph or (ph == P.REVEAL and STEPS[i][0] == P.DRINK) or (ph == P.DEAL and STEPS[i][0] == P.POUR)
+		var chip := _steps[i]
+		chip.add_theme_stylebox_override("panel", Ui.box(Ui.YELLOW if on else Ui.PLUM_LIGHT, 14, 3, 3 if on else 2, Ui.INK, Vector4(12, 3, 12, 5)))
+		(chip.get_child(0) as Label).add_theme_color_override("font_color", Ui.INK if on else Ui.MUTED)
+		chip.scale = Vector2.ONE * (1.12 if on else 1.0)
+		chip.pivot_offset = chip.size * 0.5
 	_refresh_guests()
 	_refresh_tray()
 	_refresh_items()
-	_refresh_prompt()
+	_refresh_coach()
 	var alive := Session.am_alive()
 	_pass.visible = ph == P.ITEMS and Session.is_my_turn()
 	_ready.visible = ph == P.TALK and alive
 	var ready := bool(Session.seat_info(Session.my_seat).get("ready", false))
 	_ready.disabled = ready
-	_ready.text = "Ready!" if ready else "Ready to drink"
+	_ready.text = "READY!" if ready else "READY TO DRINK"
 	_tray_panel.visible = alive and ph in [P.DEAL, P.POUR, P.ITEMS, P.TALK]
-	_items_panel.visible = alive and ph != P.MATCH_END
+	_items_panel.visible = alive and ph in [P.DEAL, P.POUR, P.ITEMS, P.TALK]
 	if ph != _last_phase:
 		_last_phase = ph
 		if ph == P.INTRO:
 			call_deferred(&"_show_role")
-		if ph == P.TALK:
-			Sfx.play(&"page", -4.0)
+		for i in STEPS.size():
+			if STEPS[i][0] == ph:
+				Ui.pop_in(_steps[i])
+				Sfx.play(&"pop", -4.0)
 
 
 func _refresh_guests() -> void:
-	for c in _guests.get_children():
-		c.queue_free()
 	var turn := int(Session.public.get("turn", -1))
+	var rows: Array = []
 	for i in Session.seat_count():
 		var s := Session.seat_info(i)
-		var h := UiKit.hbox(6)
-		_guests.add_child(h)
+		var tag := ""
 		var alive := bool(s.get("alive", true))
-		var name_col := UiKit.hs.text if alive else Color("6f7f9a")
-		if int(s.get("team", -1)) >= 0:
-			name_col = Defs.TEAM_COLORS[int(s["team"])] if alive else name_col
-		var nm := UiKit.label(("%s%s" % [s.get("name", "?"), "  (you)" if i == Session.my_seat else ""]), 14, name_col, &"serif", 650)
-		nm.custom_minimum_size.x = 170
-		h.add_child(nm)
-		var tags: Array[String] = []
 		if not alive:
-			tags.append("ghost")
-		elif Session.phase == P.POUR and s.get("poured", false):
-			tags.append("poured")
+			tag = "GHOST"
+		elif Session.phase == P.POUR:
+			tag = "POURED" if s.get("poured", false) else "pouring..."
 		elif Session.phase == P.ITEMS and i == turn:
-			tags.append("choosing...")
-		elif Session.phase == P.TALK and s.get("ready", false):
-			tags.append("ready")
-		if Voice.is_speaking(int(s.get("id", 0))):
-			tags.append("speaking")
-		if s.get("bot", false):
-			tags.append("bot")
-		h.add_child(UiKit.label(", ".join(tags), 12, UiKit.hs.accent if "speaking" in tags else UiKit.hs.text_soft, &"sans", 800))
+			tag = "CHOOSING"
+		elif Session.phase == P.TALK:
+			tag = "READY" if s.get("ready", false) else ""
+		var talking := Voice.is_speaking(int(s.get("id", 0)))
+		rows.append([String(s.get("name", "?")), tag, alive, talking, i == Session.my_seat, int(s.get("team", -1)), bool(s.get("bot", false))])
+	var sig := str(rows)
+	if sig == _guest_sig:
+		return
+	_guest_sig = sig
+	for c in _guests.get_children():
+		c.queue_free()
+	for r: Array in rows:
+		var bg: Color = Ui.PLUM if r[2] else Color("2c2a4a")
+		if r[5] >= 0 and r[2]:
+			bg = Defs.TEAM_COLORS[r[5]].darkened(0.3)
+		var p := PanelContainer.new()
+		p.add_theme_stylebox_override("panel", Ui.box(bg, 14, 3, 3, Ui.MINT if r[3] else Ui.INK, Vector4(10, 3, 12, 5)))
+		p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var h := Ui.hbox(8)
+		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		p.add_child(h)
+		var nm := Ui.label(("%s%s" % [r[0], " (you)" if r[4] else ""]), 16, Ui.CREAM if r[2] else Color("9aa6d6"), 700)
+		nm.custom_minimum_size.x = 150
+		h.add_child(nm)
+		if r[3]:
+			h.add_child(Ui.label("talking", 13, Ui.MINT, 700))
+		if r[1] != "":
+			var col := Ui.MINT if r[1] in ["POURED", "READY"] else (Ui.YELLOW if r[1] == "CHOOSING" else Ui.MUTED)
+			h.add_child(Ui.label(r[1], 13, col, 700))
+		_guests.add_child(p)
 
 
 func _refresh_tray() -> void:
@@ -381,7 +405,7 @@ func _refresh_tray() -> void:
 		sc.drag_started.connect(_start_drag)
 		_tray.add_child(sc)
 	if hand.is_empty() and not spike:
-		_tray.add_child(UiKit.wrap(UiKit.label("Empty until the next deal.", 13, UiKit.hs.text_soft), 90))
+		_tray.add_child(Ui.wrap(Ui.label("Empty. New cards next round.", 15, Ui.MUTED), 110))
 
 
 func _refresh_items() -> void:
@@ -396,9 +420,6 @@ func _refresh_items() -> void:
 	for i in items.size():
 		var card := TrayCard.new().setup(i, int(items[i]), true)
 		card.enabled = my_turn
-		if table.targeting == i:
-			card.add_theme_stylebox_override("panel", UiKit.hs.row_box(true))
-			card.modulate = Color(1.15, 1.05, 0.85)
 		card.clicked.connect(func(c: TrayCard) -> void:
 			if table.targeting == c.index:
 				table.cancel_targeting()
@@ -407,92 +428,113 @@ func _refresh_items() -> void:
 			_items_sig = ""
 			_refresh_items())
 		_items.add_child(card)
+		if table.targeting == i:
+			card.set_selected.call_deferred(true)
 	if items.is_empty():
-		_items.add_child(UiKit.wrap(UiKit.label("No items. One more each round.", 13, UiKit.hs.text_soft), 90))
+		_items.add_child(Ui.wrap(Ui.label("No items. You get one each round.", 15, Ui.MUTED), 110))
 
 
-func _refresh_prompt() -> void:
+## The coach: one big instruction and a hint, always about the thing you should do right now.
+func _refresh_coach() -> void:
 	_refresh_items()
-	var t := _prompt_text()
-	_prompt.text = t
-	_prompt_box.visible = t != ""
+	var c := _coach_text_for()
+	var head: String = c[0]
+	_coach.visible = head != ""
+	if head != _coach_text and head != "":
+		Ui.pop_in(_coach)
+	_coach_text = head
+	_coach_head.text = head
+	_coach_sub.text = c[1]
+	_coach_sub.visible = c[1] != ""
+	_coach.add_theme_stylebox_override("panel", Ui.box(c[2], 20, 4, 6, Ui.INK, Vector4(24, 8, 24, 10)))
 
 
-func _prompt_text() -> String:
+func _coach_text_for() -> Array:
 	var ph := Session.phase
-	var target := Session.seat_name(table.pour_target())
+	var target := Session.seat_name(table.pour_target()).to_upper()
 	if Session.my_seat < 0:
-		return "You are watching."
+		return ["YOU'RE WATCHING", "", Ui.LILAC]
 	if not Session.am_alive():
 		var left := int(Session.seat_info(Session.my_seat).get("rattles", 0))
 		if ph in [P.POUR, P.ITEMS, P.TALK]:
-			return "You are a ghost. You see what is in every cup. Click a cup to rattle it (%d left)." % left if left > 0 else "You are a ghost. Out of rattles for this round; hold V to talk to the other ghosts."
-		return ""
+			if left > 0:
+				return ["YOU'RE A GHOST! CLICK A CUP TO RATTLE IT", "You can see inside every cup (the glowing dots). %d rattles left. Warn them... or trick them." % left, Color("a7c7ff")]
+			return ["BOO. YOU'RE A GHOST", "Out of rattles this round. Hold V to haunt the other ghosts.", Color("a7c7ff")]
+		return ["", "", Ui.YELLOW]
 	match ph:
 		P.INTRO:
-			return "The guests take their seats..."
+			return ["WELCOME TO THE TEA PARTY", "Everyone pours tea for their neighbour... and maybe some poison.", Ui.YELLOW]
 		P.DEAL:
-			return "Dealing ingredients into your hidden tray..."
+			return ["LOOK AT YOUR SECRET CARDS", "Hover your tray (bottom left) or hold TAB. Poison kills, antidote saves, sugar hides the smell.", Ui.YELLOW]
 		P.POUR:
 			if bool(Session.seat_info(Session.my_seat).get("poured", false)):
 				if bool(Session.private.get("spike", false)) and not table.spiked:
-					return "Poured. As the butler you may drag your vial into any other guest's cup."
-				return "Poured. Waiting for the others..."
+					return ["BUTLER: SPIKE A CUP?", "Drag your purple vial onto ANY other guest's cup. Nobody will see.", Color("d8b4ff")]
+				return ["DONE! WAITING FOR THE OTHERS", "Throw a cake at someone while you wait (F).", Ui.MINT]
 			if table._held:
-				return "Carry the teapot to %s's cup and click to pour." % target
+				return ["NOW CLICK %s'S CUP" % target, "The one with the bouncing arrow. Your teapot pours into it.", Ui.YELLOW]
 			if not table.tea_poured:
-				return "Pick up your teapot and pour tea for %s (the glowing cup)." % target
-			return "Now drag one ingredient from your tray into %s's cup." % target
+				return ["CLICK YOUR TEAPOT", "You pour tea for %s, the guest on your left." % target.capitalize(), Ui.YELLOW]
+			return ["DRAG A CARD INTO %s'S CUP" % target, "Poison to kill, antidote to save, sugar to confuse, plain to be boring.", Ui.PINK]
 		P.ITEMS:
 			if Session.is_my_turn():
 				if table.targeting >= 0:
 					var item := table.targeting_item()
 					var need: int = Defs.ITEMS[item]["targets"]
-					var what := "cups" if Defs.ITEMS[item]["target"] == &"cup" else "guests"
-					return "%s: click %d %s (%d chosen). Right-click to cancel." % [Defs.item_name(item), need, what if need > 1 else what.trim_suffix("s"), table.targets.size()]
-				return "Your turn: click an item card to play it, or Pass."
+					var what := "CUPS" if Defs.ITEMS[item]["target"] == &"cup" else "GUEST"
+					var picked := table.targets.size()
+					return ["%s: CLICK %s" % [Defs.item_name(item).to_upper(), ("%d %s (%d/%d)" % [need, what, picked, need]) if need > 1 else "A " + what],
+						String(Defs.ITEMS[item]["desc"]) + "  Right-click to cancel.", Ui.SKY]
+				return ["YOUR TURN: PLAY AN ITEM", "Click an item card (bottom right), or PASS.", Ui.SKY]
 			var turn := int(Session.public.get("turn", -1))
-			return "%s is deciding..." % Session.seat_name(turn) if turn >= 0 else ""
+			return ["%s IS CHOOSING AN ITEM..." % Session.seat_name(turn).to_upper() if turn >= 0 else "", "Watch the cups closely.", Ui.LILAC]
 		P.TALK:
 			if bool(Session.seat_info(Session.my_seat).get("ready", false)):
-				return "You're ready. Keep talking while the others decide."
-			return "Talk it out! Hold V to speak, Q for emotes. Ready up when you're done."
+				return ["YOU'RE READY", "Keep lying while the others decide.", Ui.MINT]
+			return ["TALK IT OUT! (hold V)", "Accuse, bluff, beg. Q for emotes. Then press READY TO DRINK.", Ui.PINK]
 		P.DRINK:
-			return "Raise your cups..."
-	return ""
+			return ["RAISE YOUR CUPS...", "", Ui.YELLOW]
+		P.REVEAL:
+			return ["", "", Ui.YELLOW]
+	return ["", "", Ui.YELLOW]
 
 
 func _show_role() -> void:
-	if _role:
-		_role.queue_free()
 	var role: StringName = Session.private.get("role", &"guest")
 	var team := int(Session.private.get("team", -1))
 	var mode: StringName = Session.match_rules.get("mode", &"classic")
-	var head := "Welcome to the party"
-	var body := "Last guest standing wins. Pour for the guest on your left, lie with a straight face."
+	var head := "LAST ONE STANDING WINS"
+	var body := "Pour for the guest on your left. Keep a straight face."
+	var col := Ui.YELLOW
 	if mode == &"teams" and team >= 0:
-		head = "Team %s" % Defs.TEAM_NAMES[team]
-		body = "Your teammates' names are in your team's colour. Keep them alive; poison the rest."
+		head = "YOU'RE TEAM %s" % Defs.TEAM_NAMES[team].to_upper()
+		body = "Your teammates' names are in your team colour. Keep them alive, poison the rest."
+		col = Defs.TEAM_COLORS[team].lightened(0.3)
 	elif mode == &"butler":
 		if role == &"butler":
-			head = "You are the Butler"
-			body = "From round 2 you may spike any cup with an extra poison. Survive to the final two and the house is yours."
+			head = "YOU ARE THE BUTLER"
+			body = "From round 2 you can secretly spike any cup. Survive to the final two to win."
+			col = Color("d8b4ff")
 		else:
-			head = "A butler is among you"
-			body = "Someone at this table is the hidden butler, spiking cups. Poison the butler and the guests win."
-	_role = UiKit.panel()
-	var v := UiKit.vbox(6)
-	_role.add_child(v)
-	v.add_child(UiKit.title(head, 30))
-	v.add_child(UiKit.wrap(UiKit.label(body, 15), 380))
-	var c := UiKit.center(_role)
+			head = "THE BUTLER IS AMONG US"
+			body = "Someone is secretly spiking cups. Poison the butler and the guests win."
+	var p := Ui.panel()
+	var v := Ui.vbox(8)
+	p.add_child(v)
+	v.add_child(Ui.title(head, 44, col))
+	v.add_child(Ui.wrap(Ui.label(body, 20), 520))
+	var c := Ui.center(p)
 	_root.add_child(c)
-	UiKit.fade_in(_role, 0.4)
+	Ui.pop_in(p)
 	Sfx.play(&"secret", -3.0)
 	var tw := c.create_tween()
-	tw.tween_interval(3.6)
-	tw.tween_property(_role, "modulate:a", 0.0, 0.5)
+	tw.tween_interval(3.4)
+	tw.tween_property(p, "modulate:a", 0.0, 0.4)
 	tw.tween_callback(c.queue_free)
+	if not bool(Profile.settings.get("tutorial_seen", false)):
+		tw.tween_callback(func() -> void:
+			Profile.set_setting("tutorial_seen", true)
+			_root.add_child(Tutorial.new()))
 
 
 # ---------------------------------------------------------------- events
@@ -504,135 +546,140 @@ func _on_event(ev: Dictionary) -> void:
 			_reveal.visible = false
 			_note.visible = false
 			var laced := bool(ev.get("laced", false))
-			big("Round %d" % int(ev["round"]), "The pot is laced! Every cup starts with poison." if laced else "", 2.2)
-			_log("-- Round %d --" % int(ev["round"]), UiKit.hs.gold)
+			stamp("ROUND %d" % int(ev["round"]), Ui.YELLOW, 1.6)
+			_log("ROUND %d" % int(ev["round"]), Ui.YELLOW)
 			if laced:
-				_log("The pot is laced: only antidotes save you now.", Color("b8e08a"))
+				_log("The pot is laced! Every cup starts with poison. Find an antidote!", Ui.PINK)
 		"pour":
-			_log("%s poured for %s." % [name_of.call(ev["seat"]), name_of.call(ev["target"])])
+			if int(ev["seat"]) != Session.my_seat:
+				_log("%s poured for %s" % [name_of.call(ev["seat"]), name_of.call(ev["target"])])
 		"pour_mine":
-			_log("You dropped %s into %s's cup." % [Defs.ingredient_name(int(ev["k"])), name_of.call(ev["target"])], UiKit.hs.gold)
+			_log("You dropped %s into %s's cup" % [Defs.ingredient_name(int(ev["k"])).to_upper(), name_of.call(ev["target"])], Ui.YELLOW)
 		"auto_pour":
-			_log("Too slow! %s went in for you." % Defs.ingredient_name(int(ev["k"])), Color("f0b0a0"))
+			_log("Too slow! %s went in for you" % Defs.ingredient_name(int(ev["k"])).to_upper(), Ui.PINK)
 		"spike_done":
-			_log("You spiked %s's cup." % name_of.call(ev["target"]), Color("d8a8e8"))
+			_log("You spiked %s's cup" % name_of.call(ev["target"]), Ui.LILAC)
 		"spike_sound":
-			_log("Somewhere, a quiet drip...", Color("c8b8d8"))
+			_log("...a suspicious drip", Ui.LILAC)
 		"swap":
-			_log("%s swapped %s's and %s's cups." % [name_of.call(ev["seat"]), name_of.call(ev["a"]), name_of.call(ev["b"])])
+			_log("%s SWAPPED %s's and %s's cups!" % [name_of.call(ev["seat"]), name_of.call(ev["a"]), name_of.call(ev["b"])], Ui.SKY)
 		"sniff":
-			_log("%s sniffed %s's cup." % [name_of.call(ev["seat"]), name_of.call(ev["target"])])
+			_log("%s sniffed %s's cup" % [name_of.call(ev["seat"]), name_of.call(ev["target"])])
 		"sniff_result":
 			var who: String = name_of.call(ev["target"])
 			var smell := String(ev["smell"])
-			var line := {"poison": "smells of bitter almonds. Poison!", "clean": "smells like perfectly ordinary tea.",
-				"sweet": "is so sweet you can't smell a thing. Sugar."}[smell] as String
-			_note_show([UiKit.title("You sniff %s's cup..." % who, 20),
-				UiKit.wrap(UiKit.label("It %s" % line, 15, Color("5f8a2c") if smell == "poison" else Color()), 290)], 7.0)
+			var head := {"poison": "POISON!", "clean": "SMELLS FINE", "sweet": "TOO SWEET TO TELL"}[smell] as String
+			var line := {"poison": "It smells of bitter almonds. (An antidote in there would still save them.)",
+				"clean": "Just tea. No poison in %s's cup right now." % who,
+				"sweet": "Someone put sugar in. It hides everything."}[smell] as String
+			var col := {"poison": Color("4f9e1f"), "clean": Color("1f7a4d"), "sweet": Color("b04a7a")}[smell] as Color
+			_note_show([Ui.title("YOU SNIFF %s'S CUP..." % who.to_upper(), 26, Ui.INK), Ui.title(head, 48, col),
+				Ui.wrap(Ui.label(line, 17, Ui.INK), 380)], 6.0)
 			Sfx.play(&"secret", -4.0)
 		"peek":
-			_log("%s peeked at %s's tray." % [name_of.call(ev["seat"]), name_of.call(ev["target"])])
+			_log("%s peeked at %s's tray" % [name_of.call(ev["seat"]), name_of.call(ev["target"])])
 		"peek_result":
-			var row := UiKit.hbox(4)
+			var row := Ui.hbox(6)
 			for k: int in ev["hand"]:
-				row.add_child(TeaIcon.make(TeaIcon.Kind.INGREDIENT, k, 40))
+				row.add_child(TeaIcon.make(TeaIcon.Kind.INGREDIENT, k, 56))
 			for k: int in ev["items"]:
-				row.add_child(TeaIcon.make(TeaIcon.Kind.ITEM, k, 40))
+				row.add_child(TeaIcon.make(TeaIcon.Kind.ITEM, k, 56))
 			var names: Array[String] = []
 			for k: int in ev["hand"]:
 				names.append(Defs.ingredient_name(k))
-			var items: Array[String] = []
-			for k: int in ev["items"]:
-				items.append(Defs.item_name(k))
-			_note_show([UiKit.title("%s's tray" % name_of.call(ev["target"]), 20), row,
-				UiKit.wrap(UiKit.label("Still holding: %s.\nItems: %s." % [", ".join(names) if not names.is_empty() else "nothing", ", ".join(items) if not items.is_empty() else "none"], 14), 290)], 8.0)
+			_note_show([Ui.title("%s'S TRAY" % String(name_of.call(ev["target"])).to_upper(), 30, Ui.INK), row,
+				Ui.wrap(Ui.label("Still holding: %s. So they poured something ELSE..." % (", ".join(names) if not names.is_empty() else "nothing"), 17, Ui.INK), 380)], 7.0)
 			Sfx.play(&"secret", -4.0)
 		"toast":
-			_log("%s raised a toast to %s! Drink up." % [name_of.call(ev["seat"]), name_of.call(ev["target"])], UiKit.hs.gold)
+			_log("%s FORCES %s TO DRINK!" % [name_of.call(ev["seat"]), name_of.call(ev["target"])], Ui.YELLOW)
+			stamp("A TOAST!", Ui.YELLOW, 1.2)
 		"drink":
 			var who: String = name_of.call(ev["seat"])
 			var died := bool(ev["died"])
 			var tw := create_tween()
-			tw.tween_interval(4.3)
+			tw.tween_interval(3.0)
 			tw.tween_callback(func() -> void:
-				_log("%s drank... %s" % [who, "and collapsed!" if died else "and lived."], Color("f0a0a0") if died else Color("b8e08a"))
-				if died:
-					big("%s collapses!" % who, "", 2.0))
+				_log("%s drank... %s" % [who, "and DROPPED DEAD" if died else "and survived"], Ui.PINK if died else Ui.MINT)
+				stamp("POISONED!" if died else "SAFE!", Ui.PINK if died else Ui.MINT, 1.8))
 		"drink_all":
 			var died: Array[String] = []
 			for d: Dictionary in ev["drinks"]:
 				if d["died"]:
 					died.append(Session.seat_name(int(d["seat"])))
 			var tw := create_tween()
-			tw.tween_interval(3.9)
+			tw.tween_interval(3.0)
 			tw.tween_callback(func() -> void:
 				if Session.phase != P.REVEAL:
 					return
 				if died.is_empty():
-					big("Everyone lives!", "...for now.", 2.4)
-					_log("Everyone survived the round.", Color("b8e08a"))
+					stamp("EVERYONE LIVES!", Ui.MINT, 2.0)
+					_log("Everyone survived. For now.", Ui.MINT)
 				else:
-					big(" & ".join(died) + (" collapses!" if died.size() == 1 else " collapse!"), "", 2.6)
+					stamp("POISONED!", Ui.PINK, 2.2)
 					for n in died:
-						_log("%s has fallen and joins the ghosts." % n, Color("f0a0a0")))
+						_log("%s is dead and becomes a ghost" % n, Ui.PINK))
 		"reveal":
 			var list: Array = ev["cups"]
 			var tw := create_tween()
-			tw.tween_interval(4.2)
+			tw.tween_interval(4.5)
 			tw.tween_callback(func() -> void: _show_reveal(list))
 		"rattle":
-			_log("The ghost of %s rattles %s's cup..." % [name_of.call(ev["seat"]), name_of.call(ev["target"])], Color("a8c8f0"))
-		"ready":
-			pass
+			_log("The ghost of %s rattles %s's cup..." % [name_of.call(ev["seat"]), name_of.call(ev["target"])], Color("a7c7ff"))
+		"cake":
+			if ev.has("target"):
+				_log("%s threw a cake at %s" % [name_of.call(ev["seat"]), name_of.call(ev["target"])], Ui.ORANGE)
 		"pass":
 			if ev.get("timeout", false):
-				_log("%s ran out of time." % name_of.call(ev["seat"]))
+				_log("%s ran out of time" % name_of.call(ev["seat"]))
 		"countdown":
 			_countdown()
 		"error":
-			_log(String(ev["text"]), Color("f0b0a0"))
-			Sfx.play(&"close", -4.0)
+			_log(String(ev["text"]), Ui.PINK)
+			Sfx.play(&"boing", -4.0)
 		"note":
 			_log(String(ev["text"]))
 
 
 func _countdown() -> void:
 	var tw := create_tween()
-	for n in ["3", "2", "1", "Drink!"]:
+	for n in ["3", "2", "1", "DRINK!"]:
 		tw.tween_callback(func() -> void:
-			big(n, "", 0.8)
-			Sfx.play(&"clink" if n == "Drink!" else &"tick", -2.0))
+			stamp(n, Ui.YELLOW if n != "DRINK!" else Ui.PINK, 0.7)
+			Sfx.play(&"clink" if n == "DRINK!" else &"tick", -2.0))
 		tw.tween_interval(0.95)
 
 
-func big(text: String, sub: String = "", seconds: float = 2.0) -> void:
-	_big.text = text + ("\n" + sub if sub != "" else "")
-	_big.visible = true
-	_big.modulate.a = 1.0
-	_big.pivot_offset = _big.size * 0.5
-	_big.scale = Vector2.ONE * 0.7
-	if _big_tw and _big_tw.is_valid():
-		_big_tw.kill()
-	_big_tw = create_tween()
-	_big_tw.tween_property(_big, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_big_tw.tween_interval(seconds)
-	_big_tw.tween_property(_big, "modulate:a", 0.0, 0.4)
-	_big_tw.tween_callback(func() -> void: _big.visible = false)
+## A huge comic stamp in the middle of the screen.
+func stamp(text: String, color: Color, seconds: float = 1.5) -> void:
+	_stamp.text = text
+	_stamp.add_theme_color_override("font_color", color)
+	_stamp.visible = true
+	_stamp.modulate.a = 1.0
+	await get_tree().process_frame
+	_stamp.pivot_offset = _stamp.size * 0.5
+	_stamp.scale = Vector2.ONE * 2.2
+	_stamp.rotation = deg_to_rad(randf_range(-8, 8))
+	if _stamp_tw and _stamp_tw.is_valid():
+		_stamp_tw.kill()
+	_stamp_tw = create_tween()
+	_stamp_tw.tween_property(_stamp, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_stamp_tw.tween_interval(seconds)
+	_stamp_tw.tween_property(_stamp, "modulate:a", 0.0, 0.3)
+	_stamp_tw.tween_callback(func() -> void: _stamp.visible = false)
 
 
-func _log(text: String, color: Color = Color()) -> void:
-	var chip := UiKit.panel(&"chip")
+func _log(text: String, color: Color = Ui.CREAM) -> void:
+	var chip := PanelContainer.new()
+	chip.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PLUM_DARK, 0.88), 12, 3, 3, Ui.INK, Vector4(10, 4, 10, 6)))
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var l := UiKit.wrap(UiKit.label(text, 13, color if color != Color() and color.get_luminance() < 0.5 else UiKit.hs.text, &"sans", 750), 290)
-	if color != Color() and color.get_luminance() >= 0.5:
-		chip.self_modulate = color.lerp(Color.WHITE, 0.55)
-	chip.add_child(l)
+	chip.add_child(Ui.wrap(Ui.label(text, 15, color, 600), 280))
 	_feed.add_child(chip)
-	while _feed.get_child_count() > 7:
+	Ui.pop_in(chip)
+	while _feed.get_child_count() > 6:
 		_feed.get_child(0).free()
 	var tw := chip.create_tween()
-	tw.tween_interval(16.0)
-	tw.tween_property(chip, "modulate:a", 0.0, 1.0)
+	tw.tween_interval(14.0)
+	tw.tween_property(chip, "modulate:a", 0.0, 0.8)
 	tw.tween_callback(chip.queue_free)
 
 
@@ -640,9 +687,11 @@ func _note_show(parts: Array, seconds: float) -> void:
 	for c in _note_body.get_children():
 		c.queue_free()
 	for p: Control in parts:
+		if p is Label:
+			(p as Label).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_note_body.add_child(p)
 	_note.visible = true
-	UiKit.fade_in(_note, 0.2)
+	Ui.pop_in(_note)
 	if _note_tw and _note_tw.is_valid():
 		_note_tw.kill()
 	_note_tw = create_tween()
@@ -656,19 +705,21 @@ func _show_reveal(list: Array) -> void:
 	for c in _reveal_rows.get_children():
 		c.queue_free()
 	for r: Dictionary in list:
-		var h := UiKit.hbox(6)
-		var nm := UiKit.label(Session.seat_name(int(r["seat"])) + (" (toast)" if r["toast"] else ""), 14, Color(), &"serif", 650)
-		nm.custom_minimum_size.x = 140
+		var row := Ui.card(Ui.CREAM if not r["died"] else Color("ffd0dc"))
+		var h := Ui.hbox(8)
+		row.add_child(h)
+		var nm := Ui.label(Session.seat_name(int(r["seat"])) + (" (toast)" if r["toast"] else ""), 17, Ui.INK, 700)
+		nm.custom_minimum_size.x = 150
 		h.add_child(nm)
-		var icons := UiKit.hbox(2)
-		icons.custom_minimum_size.x = 120
+		var icons := Ui.hbox(2)
+		icons.custom_minimum_size.x = 130
 		for k: int in r["kinds"]:
-			icons.add_child(TeaIcon.make(TeaIcon.Kind.INGREDIENT, k, 28))
+			icons.add_child(TeaIcon.make(TeaIcon.Kind.INGREDIENT, k, 32))
 		if (r["kinds"] as Array).is_empty():
-			icons.add_child(UiKit.label("(empty)", 12, UiKit.hs.text_soft))
+			icons.add_child(Ui.label("empty", 14, Color(Ui.INK, 0.5)))
 		h.add_child(icons)
-		h.add_child(UiKit.label("collapsed" if r["died"] else "lived", 13, Color("97461f") if r["died"] else UiKit.hs.good, &"sans", 850))
-		_reveal_rows.add_child(h)
+		h.add_child(Ui.label("DEAD" if r["died"] else "LIVED", 16, Color("c0184a") if r["died"] else Color("1f7a4d"), 700))
+		_reveal_rows.add_child(row)
 	_reveal.visible = true
-	UiKit.fade_in(_reveal, 0.3)
+	Ui.pop_in(_reveal)
 	Sfx.play(&"page", -3.0)

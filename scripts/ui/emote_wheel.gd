@@ -16,7 +16,7 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	visible = false
-	_font = UiKit.hs.font(&"serif", 650, 36)
+	_font = Ui.display_font()
 
 
 func open() -> void:
@@ -25,7 +25,7 @@ func open() -> void:
 	_center = _center.clamp(Vector2(RADIUS + 40, RADIUS + 40), vs - Vector2(RADIUS + 40, RADIUS + 40))
 	_pick = -1
 	visible = true
-	Sfx.play(&"open", -8.0)
+	Sfx.play(&"pop", -8.0)
 	queue_redraw()
 
 
@@ -54,19 +54,23 @@ func _process(_delta: float) -> void:
 
 func _draw() -> void:
 	var n := Defs.EMOTES.size()
-	draw_circle(_center, RADIUS + 34, Color(0.09, 0.055, 0.03, 0.55))
-	draw_arc(_center, RADIUS + 34, 0, TAU, 64, Color("e3bf73"), 2.0)
-	draw_circle(_center, INNER, Color(0.09, 0.055, 0.03, 0.7))
+	draw_circle(_center + Vector2(0, 6), RADIUS + 44, Ui.INK)
+	draw_circle(_center, RADIUS + 44, Ui.INK)
+	draw_circle(_center, RADIUS + 40, Color(Ui.PLUM, 0.95))
+	draw_circle(_center, INNER, Ui.PLUM_DARK)
+	var cols := [Ui.YELLOW, Ui.PINK, Ui.ORANGE, Ui.LILAC, Ui.MINT, Ui.SKY, Ui.YELLOW, Ui.PINK]
 	for i in n:
 		var a := -PI / 2.0 + TAU * i / n
 		var pos := _center + Vector2.from_angle(a) * RADIUS
 		var on := i == _pick
-		draw_circle(pos, 40 if on else 34, Color("f5e6c4") if on else Color("e8d6ae"))
-		draw_arc(pos, 40 if on else 34, 0, TAU, 32, Color("97461f") if on else Color("6b5540"), 2.5 if on else 1.5)
+		var r := 44.0 if on else 36.0
+		draw_circle(pos + Vector2(0, 4), r + 3, Ui.INK)
+		draw_circle(pos, r + 3, Ui.INK)
+		draw_circle(pos, r, cols[i % cols.size()] if on else Ui.CREAM)
 		var text: String = Defs.EMOTES[i]["name"]
-		var fs := 15
+		var fs := 17 if on else 15
 		var w := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, fs).x
-		draw_string(_font, pos + Vector2(-w * 0.5, 5), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("3a2a1c"))
-	var hint := "Emotes"
-	var hw := _font.get_string_size(hint, HORIZONTAL_ALIGNMENT_CENTER, -1, 14).x
-	draw_string(_font, _center + Vector2(-hw * 0.5, 5), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("f5e6c4"))
+		draw_string(_font, pos + Vector2(-w * 0.5, 6), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Ui.INK)
+	var hint := "EMOTE"
+	var hw := _font.get_string_size(hint, HORIZONTAL_ALIGNMENT_CENTER, -1, 16).x
+	draw_string(_font, _center + Vector2(-hw * 0.5, 6), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Ui.YELLOW)

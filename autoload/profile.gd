@@ -15,7 +15,9 @@ var owned: Array[String] = []
 var equipped: Dictionary = Cosmetics.DEFAULT_EQUIP.duplicate()
 var stats: Dictionary = {}
 var settings := {"master": 0.9, "music": 0.55, "sfx": 0.85, "voice": 1.0, "mic": true,
-	"fullscreen": false, "last_ip": "127.0.0.1"}
+	"fullscreen": false, "last_ip": "127.0.0.1", "tutorial_seen": false}
+## On Steam, show your Steam name instead of the typed one.
+var use_steam_name := true
 ## Tests and the QA harness set this so they never touch the real save.
 var ephemeral := false
 

@@ -7,7 +7,7 @@ enum Kind { INGREDIENT, ITEM, BACK, SPIKE }
 
 var kind := Kind.INGREDIENT
 var value := 0
-var ink := Color("3a2a1c")
+var ink := Color("1d1128")
 
 
 static func make(p_kind: Kind, p_value: int, px: float = 48.0) -> TeaIcon:
@@ -44,7 +44,7 @@ func _draw() -> void:
 					var r := s * 0.22
 					var pts := PackedVector2Array([c + Vector2(-r, -r * 0.4), c + Vector2(0, -r), c + Vector2(r, -r * 0.4),
 						c + Vector2(r, r * 0.6), c + Vector2(0, r), c + Vector2(-r, r * 0.6)])
-					draw_colored_polygon(pts, Color("fbf8f0"))
+					_poly(pts, Color("fbf8f0"))
 					draw_polyline(pts + PackedVector2Array([pts[0]]), ink, w)
 					draw_line(c + Vector2(-r, -r * 0.4), c + Vector2(0, r * 0.2), ink, w * 0.7)
 					draw_line(c + Vector2(r, -r * 0.4), c + Vector2(0, r * 0.2), ink, w * 0.7)
@@ -58,7 +58,7 @@ func _draw() -> void:
 					for i in range(15, 0, -1):
 						var t := float(i) / 16.0
 						leaf.append(c + Vector2(lerpf(-s * 0.28, s * 0.28, t), sin(t * PI) * s * 0.16).rotated(-0.6))
-					draw_colored_polygon(leaf, Color("8a9a5b"))
+					_poly(leaf, Color("8a9a5b"))
 					draw_polyline(leaf + PackedVector2Array([leaf[0]]), ink, w)
 					draw_line(c + Vector2(-s * 0.3, 0).rotated(-0.6), c + Vector2(s * 0.26, 0).rotated(-0.6), ink, w * 0.7)
 		Kind.ITEM:
@@ -90,7 +90,7 @@ func _draw() -> void:
 					for i in range(15, 0, -1):
 						var t := float(i) / 16.0
 						eye.append(c + Vector2(lerpf(-s * 0.32, s * 0.32, t), sin(t * PI) * s * 0.18))
-					draw_colored_polygon(eye, Color("fbf8f0"))
+					_poly(eye, Color("fbf8f0"))
 					draw_polyline(eye + PackedVector2Array([eye[0]]), ink, w)
 					draw_circle(c, s * 0.11, Color("2e6a93"))
 					draw_circle(c, s * 0.05, ink)
@@ -123,7 +123,7 @@ func _arrow(a: Vector2, b: Vector2, col: Color, w: float) -> void:
 	var d := (b - a).normalized()
 	var n := Vector2(-d.y, d.x)
 	var h := (b - a).length() * 0.25
-	draw_colored_polygon(PackedVector2Array([b + d * h * 0.3, b - d * h + n * h * 0.6, b - d * h - n * h * 0.6]), col)
+	_poly(PackedVector2Array([b + d * h * 0.3, b - d * h + n * h * 0.6, b - d * h - n * h * 0.6]), col)
 
 
 func _cup(c: Vector2, r: float, tilt: float, w: float) -> void:
@@ -131,17 +131,23 @@ func _cup(c: Vector2, r: float, tilt: float, w: float) -> void:
 	var out := PackedVector2Array()
 	for p in pts:
 		out.append(c + p.rotated(tilt))
-	draw_colored_polygon(out, Color("fbf8f0"))
+	_poly(out, Color("fbf8f0"))
 	draw_polyline(out + PackedVector2Array([out[0]]), ink, w)
 	draw_line(out[0].lerp(out[1], 0.1), out[0].lerp(out[1], 0.9), Color("97461f"), w * 1.4)
 
 
 func _back(o: Vector2, s: float, w: float) -> void:
-	var r := Rect2(o + Vector2(s * 0.12, s * 0.06), Vector2(s * 0.76, s * 0.88))
-	draw_rect(r, Color("6b2e22"))
-	draw_rect(r.grow(-s * 0.05), Color("d9b77a"), false, w)
-	var c := r.get_center()
-	for i in 4:
-		var a := i * PI / 2 + PI / 4
-		draw_line(c, c + Vector2.from_angle(a) * s * 0.18, Color("d9b77a"), w)
-	draw_circle(c, s * 0.06, Color("d9b77a"))
+	# A face-down card: a big question mark on a teacup silhouette.
+	var c := o + Vector2(s, s) * 0.5
+	draw_circle(c, s * 0.34, Color(1, 1, 1, 0.18))
+	var f := Ui.display_font()
+	var fs := int(s * 0.6)
+	var tw := f.get_string_size("?", HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	draw_string_outline(f, c + Vector2(-tw.x * 0.5, fs * 0.36), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, int(s * 0.08), ink)
+	draw_string(f, c + Vector2(-tw.x * 0.5, fs * 0.36), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Ui.CREAM)
+
+
+## draw_colored_polygon, skipping shapes that can't be triangulated (degenerate at tiny sizes).
+func _poly(pts: PackedVector2Array, col: Color) -> void:
+	if pts.size() >= 3 and not Geometry2D.triangulate_polygon(pts).is_empty():
+		draw_colored_polygon(pts, col)

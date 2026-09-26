@@ -7,6 +7,7 @@ const BINDINGS := {
 	&"peek_tray": [KEY_TAB],
 	&"pause": [KEY_ESCAPE],
 	&"ready_up": [KEY_ENTER, KEY_KP_ENTER],
+	&"throw_cake": [KEY_F],
 }
 
 

@@ -170,3 +170,58 @@ func show_view(kinds: Array) -> void:
 		var tw := mote.create_tween().set_loops()
 		tw.tween_property(mote, "position:y", 0.47, 0.8 + i * 0.1).set_trans(Tween.TRANS_SINE)
 		tw.tween_property(mote, "position:y", 0.42, 0.8 + i * 0.1).set_trans(Tween.TRANS_SINE)
+
+
+# ---------------------------------------------------------------- chaos
+
+var _clone: RigidBody3D
+
+
+## Send a physics copy of the cup flying (the real cup hides until restore()).
+func fling(impulse: Vector3) -> void:
+	if _clone and is_instance_valid(_clone):
+		_clone.apply_central_impulse(impulse)
+		return
+	var world := get_tree().current_scene.get_node_or_null("World") as Node3D
+	if world == null:
+		world = get_parent() as Node3D
+	_clone = RigidBody3D.new()
+	_clone.collision_layer = Guest.L_PROPS
+	_clone.collision_mask = Guest.L_WORLD | Guest.L_RAGDOLL | Guest.L_PROPS
+	_clone.mass = 0.3
+	var pm := PhysicsMaterial.new()
+	pm.bounce = 0.45
+	_clone.physics_material_override = pm
+	var cs := CollisionShape3D.new()
+	var cyl := CylinderShape3D.new()
+	cyl.radius = 0.2
+	cyl.height = 0.2
+	cs.shape = cyl
+	cs.position = Vector3(0, 0.1, 0)
+	_clone.add_child(cs)
+	_clone.add_child(_china.duplicate())
+	world.add_child(_clone)
+	_clone.global_transform = _china.global_transform.orthonormalized()
+	_clone.apply_central_impulse(impulse * _clone.mass)
+	_clone.apply_torque_impulse(Vector3(randf_range(-0.05, 0.05), randf_range(-0.05, 0.05), randf_range(-0.05, 0.05)))
+	_china.visible = false
+	set_filled(false)
+	_clone.contact_monitor = true
+	_clone.max_contacts_reported = 1
+	_clone.body_entered.connect(func(_b: Node) -> void:
+		if _clone and _clone.linear_velocity.length() > 1.5:
+			Sfx.play_at(&"clink", _clone.global_position, -8.0, 0.2))
+
+
+func is_flung() -> bool:
+	return _clone != null and is_instance_valid(_clone)
+
+
+## Back on the table, in one piece, for the next round.
+func restore() -> void:
+	if _clone and is_instance_valid(_clone):
+		_clone.queue_free()
+	_clone = null
+	_china.visible = true
+	_china.rotation = Vector3.ZERO
+	_china.position = Vector3.ZERO

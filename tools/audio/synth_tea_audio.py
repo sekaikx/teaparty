@@ -344,6 +344,90 @@ def waltz():
     print("wrote waltz_loop")
 
 
+def bonk():
+    """A cartoon bonk: a woodblock knock with a falling pitch."""
+    dur = 0.35
+    t = t_axis(dur)
+    f = 900 * np.exp(-t * 9) + 300
+    x = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.06)
+    x += 0.4 * np.sin(2 * np.pi * np.cumsum(f * 2.7) / SR) * np.exp(-t / 0.03)
+    write("sfx/bonk", room(x, 0.2, 0.1))
+
+
+def splat():
+    dur = 0.45
+    t = t_axis(dur)
+    x = lowpass(noise(dur), 1800) * np.exp(-t / 0.08)
+    x += 0.6 * np.sin(2 * np.pi * (140 - 80 * t) * t) * np.exp(-t / 0.05)
+    write("sfx/splat", room(x, 0.2, 0.1))
+
+
+def slide_whistle():
+    """The classic falling slide whistle for a collapse."""
+    dur = 1.2
+    t = t_axis(dur)
+    f = 1500 * np.exp(-t * 1.8) + 180
+    vib = 1 + 0.01 * np.sin(2 * np.pi * 6 * t)
+    ph = 2 * np.pi * np.cumsum(f * vib) / SR
+    x = np.sin(ph) + 0.25 * np.sin(2 * ph) + 0.05 * band(noise(dur), 800, 3000)
+    env = np.clip(t / 0.03, 0, 1) * np.clip((dur - t) / 0.15, 0, 1)
+    write("sfx/slide_whistle", room(x * env, 0.3, 0.15))
+
+
+def pop():
+    dur = 0.12
+    t = t_axis(dur)
+    f = 500 + 1600 * np.exp(-t * 40)
+    x = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.025)
+    write("sfx/pop", x)
+
+
+def whoosh():
+    dur = 0.45
+    t = t_axis(dur)
+    env = np.sin(np.pi * t / dur) ** 2
+    x = np.zeros_like(t)
+    n = noise(dur)
+    for i in range(6):
+        a, b = int(i * len(t) / 6), int((i + 1) * len(t) / 6)
+        lo = 400 + 250 * i
+        x[a:b] = band(n, lo, lo * 3)[a:b]
+    write("sfx/whoosh", x * env)
+
+
+def boing():
+    dur = 0.7
+    t = t_axis(dur)
+    f = 220 + 160 * np.sin(2 * np.pi * 9 * t) * np.exp(-t * 3) + 120 * t
+    x = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.3)
+    write("sfx/boing", room(x, 0.2, 0.1))
+
+
+def kazoo_note(freq, dur, amp=1.0):
+    t = t_axis(dur)
+    ph = 2 * np.pi * freq * t * (1 + 0.004 * np.sin(2 * np.pi * 5.5 * t))
+    saw = 2 * ((ph / (2 * np.pi)) % 1.0) - 1
+    buzz = band(saw + 0.2 * noise(dur), 300, 4000)
+    env = np.clip(t / 0.02, 0, 1) * np.clip((dur - t) / 0.05, 0, 1)
+    return amp * buzz * env
+
+
+def kazoo():
+    """A kazoo victory tune."""
+    notes = [(67, 0.16), (67, 0.16), (67, 0.16), (72, 0.5), (71, 0.16), (72, 0.7)]
+    out = np.zeros(int(2.2 * SR))
+    at = 0.0
+    for m, d in notes:
+        place(out, at, kazoo_note(midi(m), d * 0.95))
+        at += d
+    write("sfx/kazoo", room(out, 0.4, 0.2))
+
+
 if __name__ == "__main__":
-    for fn in [pour, clink, toast, plip, sugar, gulp, gasp, thud, rattle, ghost, heartbeat, drumroll, sniff, card, slide, bell, fanfare, sting, waltz]:
-        fn()
+    import sys
+    fns = [pour, clink, toast, plip, sugar, gulp, gasp, thud, rattle, ghost, heartbeat, drumroll, sniff, card, slide, bell, fanfare, sting, waltz,
+           bonk, splat, slide_whistle, pop, whoosh, boing, kazoo]
+    wanted = sys.argv[1:]
+    for fn in fns:
+        if not wanted or fn.__name__ in wanted:
+            fn()

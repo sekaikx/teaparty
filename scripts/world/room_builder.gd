@@ -52,6 +52,7 @@ func build(room: StringName, count: int) -> Node3D:
 			_parlor()
 	_table(cloth, trim)
 	_place_seats(room, count)
+	_colliders(room)
 	return root
 
 
@@ -77,12 +78,64 @@ func _place_seats(room: StringName, count: int) -> void:
 		card_spots.append(Vector3(edge.x, TABLE_Y, edge.z) - out * 0.16 + basis * Vector3(0.42, 0, 0))
 		_place_card(Vector3(edge.x, TABLE_Y, edge.z) - out * 0.16 + basis * Vector3(0.42, 0, 0), basis)
 		if chair:
-			var c := chair.instantiate() as Node3D
-			c.transform = xf * Transform3D(Basis(), Vector3(0, 0, -Guest.SIT_BACK + 0.05))
-			root.add_child(c)
-			chairs.append(c)
+			# The chair is a frozen RigidBody3D: a collapsing guest unfreezes it and knocks it flying.
+			var rb := RigidBody3D.new()
+			rb.freeze = true
+			rb.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+			rb.mass = 4.0
+			rb.collision_layer = Guest.L_WORLD
+			rb.collision_mask = Guest.L_WORLD | Guest.L_RAGDOLL | Guest.L_PROPS
+			rb.transform = xf * Transform3D(Basis(), Vector3(0, 0, -Guest.SIT_BACK + 0.05))
+			rb.add_child(chair.instantiate())
+			_box_shape(rb, Vector3(0.7, 0.5, 0.7), Vector3(0, 0.25, 0))
+			_box_shape(rb, Vector3(0.7, 0.75, 0.12), Vector3(0, 0.85, -0.33))
+			root.add_child(rb)
+			chairs.append(rb)
 		else:
 			chairs.append(null)
+
+
+static func _box_shape(body: CollisionObject3D, size: Vector3, pos: Vector3) -> void:
+	var cs := CollisionShape3D.new()
+	var b := BoxShape3D.new()
+	b.size = size
+	cs.shape = b
+	cs.position = pos
+	body.add_child(cs)
+
+
+## Floor, walls and the table as solid bodies (for ragdolls, flying cups and cakes).
+func _colliders(room: StringName) -> void:
+	var sb := StaticBody3D.new()
+	sb.name = "Colliders"
+	sb.collision_layer = Guest.L_WORLD
+	sb.collision_mask = 0
+	var pm := PhysicsMaterial.new()
+	pm.friction = 0.9
+	pm.bounce = 0.2
+	sb.physics_material_override = pm
+	root.add_child(sb)
+	_box_shape(sb, Vector3(60, 1, 60), Vector3(0, -0.5, 0))
+	var half := Vector2(7.0, 7.0)
+	if room == &"banquet":
+		half = Vector2(9.0, 7.0)
+	elif room == &"garden":
+		half = Vector2(9.5, 9.5)
+	for side in [-1.0, 1.0]:
+		_box_shape(sb, Vector3(half.x * 2.0, 8, 0.4), Vector3(0, 4, half.y * side))
+		_box_shape(sb, Vector3(0.4, 8, half.y * 2.0), Vector3(half.x * side, 4, 0))
+	# The table: an elliptical prism.
+	var pts := PackedVector3Array()
+	for i in 32:
+		var a := TAU * i / 32.0
+		var p := Vector3(cos(a) * (table_radii.x + 0.08), 0, sin(a) * (table_radii.y + 0.08))
+		pts.append(p)
+		pts.append(p + Vector3(0, TABLE_Y, 0))
+	var cs := CollisionShape3D.new()
+	var cv := ConvexPolygonShape3D.new()
+	cv.points = pts
+	cs.shape = cv
+	sb.add_child(cs)
 
 
 ## A folded paper place card on the table (the guest's name floats over it).

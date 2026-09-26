@@ -69,19 +69,20 @@ const DEFAULT_RULES := {
 	"ghost_rattles": 3,
 	"ghosts_see_cups": true,
 	"ghosts_talk_to_living": false,
+	"helium": false,
 	"items_enabled": [Item.SWAP, Item.SNIFF, Item.TOAST, Item.PEEK],
 }
 
-## Emote wheel: id -> label, speech bubble line, upper-body clip (seated) and a voice blip.
+## Emote wheel: label, speech bubble line, gesture (Guest.gesture) and a voice blip.
 const EMOTES := [
-	{"name": "Cheers!", "line": "Cheers!", "clip": &"Cheer", "sound": &"voice_01"},
-	{"name": "Not me!", "line": "It wasn't me!", "clip": &"ual/No", "sound": &"voice_02"},
-	{"name": "Accuse", "line": "YOU!", "clip": &"Spellcast_Shoot", "sound": &"voice_03"},
-	{"name": "Hmm...", "line": "Hmm...", "clip": &"ual/Idle_FoldArms", "sound": &"voice_04"},
-	{"name": "Yes", "line": "Quite so.", "clip": &"ual/Yes", "sound": &"voice_05"},
-	{"name": "Please", "line": "Please, spare me!", "clip": &"Block", "sound": &"voice_02"},
-	{"name": "Laugh", "line": "Ha ha ha!", "clip": &"Cheer", "sound": &"voice_01"},
-	{"name": "Sip", "line": "*sips*", "clip": &"ual/Consume", "sound": &"voice_04"},
+	{"name": "Cheers!", "line": "Cheers!", "clip": &"cheer", "sound": &"voice_01"},
+	{"name": "Not me!", "line": "It wasn't me!", "clip": &"no", "sound": &"voice_02"},
+	{"name": "Accuse", "line": "YOU!!", "clip": &"point", "sound": &"voice_03"},
+	{"name": "Hmm...", "line": "Hmmmm...", "clip": &"think", "sound": &"voice_04"},
+	{"name": "Trust me", "line": "Trust me :)", "clip": &"yes", "sound": &"voice_05"},
+	{"name": "Please", "line": "PLEASE SPARE ME", "clip": &"plead", "sound": &"voice_02"},
+	{"name": "Laugh", "line": "HA HA HA", "clip": &"laugh", "sound": &"voice_01"},
+	{"name": "Sip", "line": "*sips loudly*", "clip": &"sip", "sound": &"voice_04"},
 ]
 
 const BOT_NAMES := [
