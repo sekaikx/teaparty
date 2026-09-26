@@ -780,6 +780,7 @@ func _play_drinks(drinks: Array, delay: float) -> void:
 	tw.tween_interval(1.2)
 	tw.tween_callback(func() -> void:
 		var any_death := false
+		var n_dead := 0
 		for d: Dictionary in drinks:
 			var g := guests[int(d["seat"])]
 			var cup: TeaCup = cups.get(int(d["cup"]))
@@ -790,15 +791,21 @@ func _play_drinks(drinks: Array, delay: float) -> void:
 				cup.set_filled(false)
 				_drinking.erase(cup.cup_id)
 			if d["died"]:
-				if not any_death:
-					_focus = g.head_position()
-					_focus_until = Time.get_ticks_msec() + 3500
+				# One at a time, a beat apart: "who's next?" is the clip.
+				var beat := 0.75 * n_dead
+				n_dead += 1
 				any_death = true
-				var head := g.head_position()
-				var t := g.die()
-				_blame_labels.append(_float_text(head + Vector3(0, 0.75, 0), blame_text(d.get("blame", {})), Color("ff5d8f"), 0.0, 30))
-				if g.seat == my_seat:
-					_death_cam_until = Time.get_ticks_msec() + int((t + 1.8) * 1000.0)
+				get_tree().create_timer(beat).timeout.connect(func() -> void:
+					_focus = g.head_position()
+					_focus_until = Time.get_ticks_msec() + 1800
+					var head := g.head_position()
+					var t := g.die()
+					if beat > 0.0:
+						shake(0.12)
+						Sfx.play(&"sting", -6.0)
+					_blame_labels.append(_float_text(head + Vector3(0, 0.75, 0), blame_text(d.get("blame", {})), Color("ff5d8f"), 0.0, 30))
+					if g.seat == my_seat:
+						_death_cam_until = Time.get_ticks_msec() + int((t + 1.8) * 1000.0))
 			elif g.alive and not g.is_down():
 				g.sit_back_down()
 		if any_death:

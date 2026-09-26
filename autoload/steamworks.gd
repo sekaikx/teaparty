@@ -4,8 +4,9 @@ extends Node
 ##   GodotSteam (GDExtension; install it from Godot's AssetLib) - Steam init, your name, lobbies,
 ##     invites and the friends overlay. Used through Engine.get_singleton("Steam") so the game
 ##     still runs (with LAN / solo only) when it's missing.
-##   addons/steam-multiplayer-peer (bundled) - SteamMultiplayerPeer, which carries the game's
-##     RPCs over Steam Networking Sockets (Valve's relay: no port forwarding, NAT-friendly).
+##   scripts/net/steam_peer.gd (SteamPeer) - carries the game's RPCs over GodotSteam's own P2P
+##     functions (Valve's relay: no port forwarding, NAT-friendly). No second Steam addon, so there
+##     is only one steam_api64.dll (GodotSteam's) and no DLL version clash.
 ##
 ## Everyone on Spacewar shares one lobby list, so our lobbies carry a "tag" and the browser
 ## filters on it. Join by code = the lobby ID.
@@ -41,13 +42,15 @@ func _ready() -> void:
 	if "--no-steam" in OS.get_cmdline_user_args():
 		reason = "Steam disabled (--no-steam)."
 		return
-	if not Engine.has_singleton("Steam"):
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--fake-steam="):
+			# Testing only: tools/fake_steam.gd stands in for GodotSteam over local UDP.
+			steam = (load("res://tools/fake_steam.gd") as GDScript).new(int(a.get_slice("=", 1)))
+	if steam == null and not Engine.has_singleton("Steam"):
 		reason = "GodotSteam isn't installed. In Godot open AssetLib, search \"GodotSteam\", install the GDExtension, restart the editor."
 		return
-	if not ClassDB.class_exists("SteamMultiplayerPeer"):
-		reason = "addons/steam-multiplayer-peer is missing."
-		return
-	steam = Engine.get_singleton("Steam")
+	if steam == null:
+		steam = Engine.get_singleton("Steam")
 	OS.set_environment("SteamAppId", str(APP_ID))
 	OS.set_environment("SteamGameId", str(APP_ID))
 	var id: int = int(steam.call("getSteamID")) if steam.has_method("getSteamID") else 0
@@ -199,6 +202,6 @@ func _on_lobby_match_list(lobbies: Array) -> void:
 	lobby_list.emit(out)
 
 
-## A new SteamMultiplayerPeer (host or client).
+## A new Steam peer (host or client).
 func make_peer() -> MultiplayerPeer:
-	return ClassDB.instantiate(&"SteamMultiplayerPeer") as MultiplayerPeer
+	return SteamPeer.new(steam)

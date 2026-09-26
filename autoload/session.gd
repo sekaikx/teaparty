@@ -48,6 +48,8 @@ var _step_timer := 0.0
 var _resolving := false
 ## Per-seat fun stats for the end-of-match awards.
 var _fun: Dictionary = {}
+## This round's public item / ghost events, turned into talking points when the talk starts.
+var _round_log: Array = []
 ## The host's 3D table, for cake hit tests (TableView sets itself here).
 var world_probe: Object
 
@@ -216,6 +218,7 @@ func _process(delta: float) -> void:
 					if d["died"]:
 						deaths += 1
 				_emit({"type": "drink_all", "drinks": drinks})
+				_emit({"type": "moments", "list": _table_moments(drinks)})
 				_emit({"type": "reveal", "cups": _rules.reveal()})
 				_set_phase(P.REVEAL, REVEAL_TIME + REVEAL_PER_DEATH * deaths)
 		P.REVEAL:
@@ -229,6 +232,27 @@ func _process(delta: float) -> void:
 					_start_round()
 
 
+## The clip titles for a whole toast: per-death moments plus DOUBLE KILL / BLOODBATH.
+func _table_moments(drinks: Array) -> Array:
+	var out: Array = []
+	var by: Dictionary = {}
+	var deaths := 0
+	for d: Dictionary in drinks:
+		if not d["died"]:
+			continue
+		deaths += 1
+		out.append_array(d.get("moments", []))
+		for p: int in (d.get("blame", {}) as Dictionary).get("poisoners", []):
+			if p >= 0 and p != int(d["seat"]):
+				by[p] = int(by.get(p, 0)) + 1
+	for p: int in by:
+		if int(by[p]) >= 2:
+			out.push_front({"title": "DOUBLE KILL!" if int(by[p]) == 2 else "MASSACRE!", "sub": "%s poisoned %d guests at once" % [_nm(p), by[p]]})
+	if deaths >= 3:
+		out.append({"title": "BLOODBATH!", "sub": "%d guests down in one toast" % deaths})
+	return out
+
+
 func _set_phase(p: int, seconds: float) -> void:
 	phase = p
 	_timer = seconds
@@ -239,6 +263,7 @@ func _start_round() -> void:
 	_rules.start_round()
 	_cakes.clear()
 	_pending_end = {}
+	_round_log.clear()
 	var pub := _rules.public_state()
 	for s: int in _bots:
 		(_bots[s] as BotBrain).new_round(pub)
@@ -278,10 +303,58 @@ func _play_next_step() -> void:
 	_emit({"type": "item_step", "seat": step["seat"], "item": step["item"]})
 	for ev: Dictionary in step["public"]:
 		_emit(ev)
+		_round_log.append(ev)
+		if ev.get("type", "") == "drink" and not (ev.get("moments", []) as Array).is_empty():
+			_emit({"type": "moments", "list": ev["moments"]})
 	for ev: Dictionary in step["private"]:
 		_emit_private(int(step["seat"]), ev)
 	_step_timer = ITEM_STEP + (2.2 if int(step["item"]) == Defs.Item.TOAST else 0.0)
 	_push(_timer)
+
+
+## Two or three conversation starters for the talk phase, built only from what everyone saw.
+## On a Discord call this is the "so... Baron, what did you smell?" moment.
+func _talking_points() -> Array:
+	var lines: Array = []
+	for ev: Dictionary in _round_log:
+		match String(ev.get("type", "")):
+			"sniff":
+				if int(ev["seat"]) == int(ev["target"]):
+					lines.append("%s SNIFFED their own cup. Did it smell of poison? Make them answer." % _nm(ev["seat"]))
+				else:
+					lines.append("%s SNIFFED %s's cup. Make them say what they smelled." % [_nm(ev["seat"]), _nm(ev["target"])])
+			"peek":
+				lines.append("%s PEEKED at %s's cards. They know what %s poured." % [_nm(ev["seat"]), _nm(ev["target"]), _nm(ev["target"])])
+			"swap":
+				var sw := int(ev["seat"])
+				if sw == int(ev["a"]) or sw == int(ev["b"]):
+					var other := int(ev["b"]) if sw == int(ev["a"]) else int(ev["a"])
+					lines.append("%s SWAPPED their cup with %s's. What were they scared of?" % [_nm(sw), _nm(other)])
+				else:
+					lines.append("%s SWAPPED %s's and %s's cups. Helping... or framing?" % [_nm(sw), _nm(ev["a"]), _nm(ev["b"])])
+			"toast":
+				lines.append("%s FORCED %s to drink early. Revenge? Or did they know something?" % [_nm(ev["seat"]), _nm(ev["target"])])
+			"rattle":
+				lines.append("A ghost rattled %s's cup. A warning... or a trick? (Ghosts have secret grudges.)" % _nm(ev["target"]))
+	if lines.is_empty():
+		lines.append("Nobody used an item. Suspicious. Ask everyone what they poured.")
+	var living := _rules.alive_seats()
+	if not living.is_empty():
+		var s: int = living[_rng.randi_range(0, living.size() - 1)]
+		lines.append("%s poured for %s. Ask them to swear it's safe." % [_nm(s), _nm(_rules.pour_target(s))])
+	var dead := 0
+	for i in _rules.seats.size():
+		if not _rules.seats[i]["alive"]:
+			dead += 1
+	if dead > 0:
+		lines.append("Ghosts can see every cup, but each one secretly wants someone dead. Trust them?")
+	lines.shuffle()
+	return lines.slice(0, 3)
+
+
+func _nm(i: Variant) -> String:
+	var n := int(i)
+	return String(_rules.seats[n]["name"]) if n >= 0 and n < _rules.seats.size() else "?"
 
 
 func _after_items() -> void:
@@ -299,6 +372,7 @@ func _next_turn() -> void:
 
 func _begin_talk() -> void:
 	_set_phase(P.TALK, float(_rules.rules["talk_time"]))
+	_emit({"type": "talking_points", "lines": _talking_points()})
 	var talk := float(_rules.rules["talk_time"])
 	for s: int in _bots:
 		var b: BotBrain = _bots[s]
@@ -344,6 +418,14 @@ func _awards() -> Array:
 			first = i
 	if kills_top >= 0:
 		out.append({"seat": kills_top, "title": "MASTER POISONER", "desc": ("%d guest poisoned" if kills == 1 else "%d guests poisoned") % kills})
+	var vg := -1
+	var vg_n := 0
+	for i in _rules.seats.size():
+		if int(_rules.seats[i]["grudges_paid"]) > vg_n:
+			vg_n = int(_rules.seats[i]["grudges_paid"])
+			vg = i
+	if vg >= 0:
+		out.append({"seat": vg, "title": "VENGEFUL SPIRIT", "desc": "haunted %d grudge(s) to death" % vg_n})
 	for spec: Array in [["hits", "SHARPSHOOTER", "%d cake(s) to the face"], ["saves", "GUARDIAN ANGEL", "knocked away %d deadly cup(s)"],
 			["spills", "BUTTERFINGERS", "spilled %d cup(s)"], ["faces", "CAKE MAGNET", "took %d cake(s) to the face"]]:
 		var top: int = best.call(spec[0])
@@ -600,6 +682,11 @@ func _throw(s: int, target: Vector3) -> void:
 			_fun_add(s, "saves")
 	_emit({"type": "cake", "seat": s, "to": target, "seed": _rng.randi(), "hit": kind, "victim": victim,
 		"spilled": spilled, "ghost": ghost})
+	if saved:
+		var title := "GHOST SAVE!" if ghost else ("SAVED YOURSELF!" if victim == s else "CAKE SAVE!")
+		if ghost and int(_rules.seats[s]["grudge"]) == victim:
+			title = "OOPS! SAVED THEIR GRUDGE!"
+		_emit({"type": "moments", "list": [{"title": title, "sub": "%s knocked a DEADLY cup out of %s's hands" % [_nm(s), _nm(victim) if victim != s else "their own"]}]})
 	_push(float(public.get("total", _timer)))
 
 
@@ -659,6 +746,7 @@ func _do_ready(s: int) -> void:
 func _do_rattle(s: int, target: int) -> void:
 	if s >= 0 and _rules.rattle(s, target):
 		_emit({"type": "rattle", "seat": s, "target": target})
+		_round_log.append({"type": "rattle", "seat": s, "target": target})
 		_push(float(public.get("total", _timer)))
 
 
@@ -757,5 +845,5 @@ func _tick_bots(dt: float) -> void:
 							_bot_throw(s, false, others[_rng.randi_range(0, others.size() - 1)])
 				else:
 					var t := b.choose_rattle(priv, pub)
-					if t >= 0:
+					if t >= 0 and t != int(_rules.seats[s]["grudge"]):
 						_bot_throw(s, true, t)

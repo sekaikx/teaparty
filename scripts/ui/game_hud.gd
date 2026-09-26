@@ -55,6 +55,13 @@ var _last_phase := -1
 var _my_pour := ""
 var _my_lock := ""
 var _memo: Label
+var _points: PanelContainer
+var _points_box: VBoxContainer
+var _moment: PanelContainer
+var _moment_title: Label
+var _moment_sub: Label
+var _moment_q: Array = []
+var _moment_busy := false
 
 
 func setup(p_table: TableView) -> void:
@@ -209,6 +216,30 @@ func _build_center() -> void:
 	_stamp.visible = false
 	_root.add_child(_stamp)
 	Ui.pin(_stamp, Vector2(0.5, 0.45), Vector2(0.5, 0.5))
+	# Clip banner: the headline of the moment ("DOUBLE KILL!", "GHOST SAVE!").
+	_moment = Ui.panel(Ui.YELLOW, 22, Vector4(28, 10, 28, 12))
+	_moment.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_moment.visible = false
+	var mv := Ui.vbox(0)
+	mv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_moment.add_child(mv)
+	_moment_title = Ui.title("", 54, Ui.PINK)
+	_moment_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mv.add_child(_moment_title)
+	_moment_sub = Ui.label("", 19, Ui.INK, 700)
+	_moment_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mv.add_child(_moment_sub)
+	_root.add_child(_moment)
+	Ui.pin(_moment, Vector2(0.5, 0.72), Vector2(0.5, 0.5))
+	# Talking points for the talk phase (what to argue about on voice / Discord).
+	_points = Ui.panel(Color(Ui.PLUM_DARK, 0.92), 18, Vector4(14, 10, 14, 12))
+	_points.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_points.visible = false
+	_points_box = Ui.vbox(6)
+	_points_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_points.add_child(_points_box)
+	_root.add_child(_points)
+	Ui.pin(_points, Vector2(0, 0), Vector2(0, 0), Vector2(14, 236))
 	_note = Ui.panel(Ui.CREAM, 22)
 	_note.visible = false
 	_note.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -467,6 +498,10 @@ func _coach_text_for() -> Array:
 		return ["YOU'RE WATCHING", "", Ui.LILAC]
 	if not Session.am_alive():
 		var left := int(Session.seat_info(Session.my_seat).get("rattles", 0))
+		var grudge := int(Session.private.get("grudge", -1))
+		if grudge >= 0 and bool(Session.seat_info(grudge).get("alive", false)) and ph in [P.POUR, P.ITEMS, P.TALK]:
+			return ["GHOST GRUDGE: GET %s KILLED" % Session.seat_name(grudge).to_upper(),
+				"You see every cup. Lie on voice: tell %s their poison is safe, scare them off good tea. Rattles: %d." % [Session.seat_name(grudge), left], Color("a7c7ff")]
 		if ph in [P.POUR, P.ITEMS, P.TALK]:
 			if left > 0:
 				return ["YOU'RE A GHOST! CLICK A CUP TO RATTLE IT", "You can see inside every cup (the glowing dots). %d rattles left. Warn them... or trick them." % left, Color("a7c7ff")]
@@ -569,6 +604,8 @@ func _on_event(ev: Dictionary) -> void:
 	var name_of := func(s: Variant) -> String: return Session.seat_name(int(s))
 	match String(ev.get("type", "")):
 		"round":
+			_points.visible = false
+			_moment_q.clear()
 			_reveal.visible = false
 			_note.visible = false
 			_my_pour = ""
@@ -675,7 +712,23 @@ func _on_event(ev: Dictionary) -> void:
 		"pass":
 			if ev.get("timeout", false):
 				_log("%s ran out of time" % name_of.call(ev["seat"]))
+		"moments":
+			for m: Dictionary in ev.get("list", []):
+				_moment_q.append(m)
+			if Session.phase == P.DRINK and not (ev.get("list", []) as Array).is_empty() and String(ev["list"][0]["title"]).ends_with("SAVE!"):
+				_play_moments(0.0)
+			else:
+				_play_moments(3.8)
+		"talking_points":
+			for c in _points_box.get_children():
+				c.queue_free()
+			_points_box.add_child(Ui.label("TALK ABOUT THIS:", 15, Ui.YELLOW, 800))
+			for line: String in ev.get("lines", []):
+				_points_box.add_child(Ui.wrap(Ui.label("- " + line, 14, Ui.CREAM, 700), 300))
+			_points.visible = true
+			Ui.pop_in(_points)
 		"countdown":
+			_points.visible = false
 			_countdown()
 		"error":
 			_log(String(ev["text"]), Ui.PINK)
@@ -694,6 +747,30 @@ func _countdown() -> void:
 
 
 ## A huge comic stamp in the middle of the screen.
+## Shows queued clip banners one after another.
+func _play_moments(delay: float) -> void:
+	if _moment_busy:
+		return
+	_moment_busy = true
+	if delay > 0.0:
+		await get_tree().create_timer(delay).timeout
+	while not _moment_q.is_empty():
+		var m: Dictionary = _moment_q.pop_front()
+		_moment_title.text = String(m.get("title", ""))
+		_moment_sub.text = String(m.get("sub", ""))
+		_moment.visible = true
+		_moment.modulate.a = 1.0
+		Ui.pop_in(_moment)
+		Sfx.play(&"sting", -4.0)
+		_log(String(m.get("title", "")) + " " + String(m.get("sub", "")), Ui.YELLOW)
+		await get_tree().create_timer(1.8).timeout
+		var tw := _moment.create_tween()
+		tw.tween_property(_moment, "modulate:a", 0.0, 0.25)
+		await tw.finished
+		_moment.visible = false
+	_moment_busy = false
+
+
 func stamp(text: String, color: Color, seconds: float = 1.5) -> void:
 	_stamp.text = text
 	_stamp.add_theme_color_override("font_color", color)

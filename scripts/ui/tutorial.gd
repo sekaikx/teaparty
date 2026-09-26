@@ -17,7 +17,7 @@ const PAGES := [
 		"text": "Everyone secretly picks one item at the same time.\nSWAP two cups. SNIFF a cup for poison. TOAST makes someone drink NOW. PEEK at someone's cards."},
 	{"title": "4. LIE TO YOUR FRIENDS", "color": Color("c3a6ff"),
 		"icons": [["key", "V"], ["key", "Q"], ["key", "F"]],
-		"text": "Hold V to talk, Q for emotes. Accuse, bluff, beg. Then hit READY TO DRINK."},
+		"text": "Talk on Discord (or hold V). The TALK ABOUT THIS box gives you something to argue about. Accuse, bluff, beg, then hit READY TO DRINK. Dead friends can talk too, but every ghost has a secret GRUDGE, so they might be lying."},
 	{"title": "5. THE TOAST: CAKES!", "color": Color("3ddc97"),
 		"icons": [["ing", Defs.Ingredient.POISON], ["arrow"], ["ghost"]],
 		"text": "Everyone raises their cup. Press F to throw cake: hit a CUP and it spills, hit a FACE and they drop it. Then everyone drinks. More poison than antidote? You're dead, and you come back as a ghost (with cakes). LAST ONE ALIVE WINS."},

@@ -26,12 +26,25 @@ match, **PLAY AGAIN!** starts the next one right away.
 | **3 TALK** | Hold **V** to talk, **Q** for emotes. The coach reminds you who poured your cup and what you put in. Press **READY TO DRINK**. |
 | **4 TOAST** | Everyone stands and raises their cup for 5 seconds. **F** throws a cake at the point under your mouse: hitting a **cup** spills it (nobody drinks it), hitting a **face** knocks that guest down and makes them drop their cup. Then everyone drinks. More poison than antidote means you're dead, and a sign over your body names the poisoner. |
 
+### Playing on a Discord call
+
+Just talk in Discord; you don't need the in-game voice (V). Everyone hears everyone, the dead included,
+and that's on purpose. **Ghosts see inside every cup, and every ghost gets a secret GRUDGE**: a
+living guest they're paid to get killed. So when your dead friend shouts "Don't drink it!", they might
+be saving you or they might be getting their revenge. In the talk phase, the **TALK ABOUT THIS** box
+turns what everyone saw into prompts ("Baron SNIFFED Ada's cup. Make him say what he smelled.").
+
+**Clip moments.** The game puts a big banner over the funny beats: *DOUBLE KILL*, *BLOODBATH*,
+*OWN GOAL* (you drank your own poison), *SELF-SWAP* (you swapped the deadly cup to yourself),
+*CAKE SAVE* / *GHOST SAVE*, *OOPS! SAVED THEIR GRUDGE*, and *REVENGE FROM BEYOND*. The poisoned
+drop one at a time, and a sign over each body names the killer.
+
 Cards: **Poison** kills. **Antidote** cancels one poison in the same cup. **Sugar** makes a sniff
 useless. **Plain** does nothing. Every round has more poison, and from round 5 the pot itself is laced.
 **Ghosts** can see inside every cup. They can rattle cups to warn or trick the living, and they get
 2 cakes per round of their own, so during the toast a ghost can save a friend or knock the antidote out of an
 enemy's hand. Only other ghosts can hear them. The **last guest alive wins**, and the results screen
-gives out awards (Master Poisoner, Sharpshooter, Guardian Angel, Butterfingers, Cake Magnet...)
+gives out awards (Master Poisoner, Vengeful Spirit, Sharpshooter, Guardian Angel, Butterfingers, Cake Magnet...)
 that pay extra coins.
 
 Modes: **Classic**, **Teams** (Earl Grey vs Darjeeling), and **The Butler** (a hidden player who
@@ -46,7 +59,8 @@ One-time setup (everyone who plays):
 1. Have the **Steam** app running and log in.
 2. In the Godot editor, open the **AssetLib** tab, search **GodotSteam**, and install
    **"GodotSteam GDExtension 4.4+"** (it installs into `addons/godotsteam`). Restart the editor.
-   The other half, `addons/steam-multiplayer-peer`, is already in the project.
+   That's the only Steam addon the game needs. The game's traffic runs through GodotSteam's own
+   P2P functions (`scripts/net/steam_peer.gd`), so there's exactly one `steam_api64.dll`.
 3. Run the game. Under **PLAY ONLINE** you should see **STEAM: CONNECTED AS <your name>**.
 
 Then:
@@ -57,6 +71,11 @@ Then:
 
 `steam_appid.txt` (containing `480`) sits in the project root for editor runs. If you export the
 game, put a copy next to the executable. Steam will show you as "playing Spacewar".
+
+**"Can't open dynamic library ... Error 127"?** That's two different `steam_api64.dll` files
+clashing. Older versions of this project bundled a second Steam addon, `addons/steam-multiplayer-peer`.
+Delete that folder (and the hidden `.godot` folder, so Godot forgets it), keep `addons/godotsteam`,
+and reopen the project.
 
 Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
 
@@ -105,6 +124,7 @@ lifetime stats (*Poisoner*, *Nose of the Year*, *Poltergeist*, *The Butler Did I
 autoload/      Keys, Sfx (buses, helium), Profile (save / levels / cosmetics), Steamworks (GodotSteam
                bridge: init, lobbies, invites, browser), Net (solo / LAN / Steam, lobby), Session
                (host-authoritative match, RPCs, bots, cakes), Voice (push-to-talk)
+scripts/net/   steam_peer.gd (Godot multiplayer over GodotSteam P2P, host relays)
 scripts/core/  defs.gd, rules.gd (TeaRules: the game as data), bot_brain.gd, cosmetics.gd
 scripts/world/ guest.gd (jointed guests, poses, googly eyes, knockdown + death ragdolls, ghosts), cake.gd,
                tea_cup.gd, teapot.gd, tableware.gd, hats.gd, room_builder.gd (rooms + colliders), mats.gd
@@ -112,7 +132,6 @@ scripts/game/  table_view.gd (camera, coach arrow, picking, events -> animation,
 scripts/ui/    ui.gd (the style), game_hud.gd, tutorial.gd, main_menu.gd, online_panel.gd,
                lobby_screen.gd, wardrobe.gd, settings_panel.gd, results_screen.gd, tray_card.gd,
                emote_wheel.gd, icon.gd, doodle.gd, timer_pie.gd, coin_icon.gd, menu_backdrop.gd
-addons/steam-multiplayer-peer/   SteamMultiplayerPeer GDExtension (MIT, expressobits)
 tools/         tests, QA harness, screenshot tools, audio synthesiser
 ```
 
@@ -125,6 +144,9 @@ godot --headless --path . -- --qa --solo --speed=8                     # a full 
 godot --headless --path . -- --qa --host --speed=6 &                   # host + client over ENet
 godot --headless --path . -- --qa --join=127.0.0.1 --speed=6
 godot --headless --path . -- --qa --tool=res://tools/test_voice_codec.gd
+godot --headless --path . -- --qa --tool=res://tools/steam_peer_test.gd  # SteamPeer vs a fake Steam: join, RPCs, relay, leave
+godot --headless --path . -- --qa --steam-host --fake-steam=1 --speed=6 &   # a full match over SteamPeer (UDP stand-in for Steam)
+godot --headless --path . -- --qa --steam-join=1 --fake-steam=2 --speed=6
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --solo --shots=/tmp/shots          # every phase
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/bean_test.gd    # guests, cakes, ragdolls, ghosts
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/char_closeup.gd # studio renders + knockdown/recover
@@ -140,18 +162,16 @@ python3 tools/audio/synth_tea_audio.py                                 # regener
   Lousberg, CC0), and the Quaternius Stylized Nature MegaKit (CC0). Ambience and music loops come
   from Woods too (made in-house).
 - Fonts: **Lilita One** and **Fredoka**, SIL Open Font License (`assets/fonts/OFL_*.txt`).
-- `addons/steam-multiplayer-peer`: Expresso Steam Multiplayer Peer, MIT, with Valve's
-  redistributable `steam_api` libraries.
 - Guests, hats, faces, cups, teapots, cakes, icons, the UI style and the tea sounds are made
   procedurally in this repo.
 
 ## Known limitations
 
-- The Steam path has not been tested end to end here, because this build machine has no Steam client. The code
+- The Steam path has been tested against a stand-in for Steam (full matches between two processes), but not
+  against the real Steam client, because this build machine doesn't have one. The code
   checks for GodotSteam at runtime and falls back to LAN / solo if it's missing. If something
   on Steam misbehaves, the lobby / invite code is in `autoload/steamworks.gd`.
-- The Steam peer only carries channel 0, so voice uses channel 0 too. Voice is basic
-  mu-law audio with no echo cancellation.
+- Voice is basic mu-law audio with no echo cancellation. On a Discord call you don't need it.
 - Cake hits are decided by the host, but ragdoll physics runs locally, so bodies can land in
   slightly different places for each player.
 - Progression is saved locally and trusted.

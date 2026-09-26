@@ -42,7 +42,7 @@ func setup(players: Array, p_rules: Dictionary, seed_value: int) -> void:
 			"hand": [], "items": [], "poured": false, "dropped": -1, "spiked": false,
 			"item_done": false, "ready": false, "rattles": 0, "died_round": -1,
 			"kills": 0, "rounds_survived": 0, "sniffs": 0, "toasts": 0, "swaps": 0, "peeks": 0,
-			"rattles_used": 0,
+			"rattles_used": 0, "grudge": -1, "grudges_paid": 0,
 		})
 		cups[i] = {"id": i, "owner": i, "contents": [], "tea": false, "drunk": false}
 		cup_at.append(i)
@@ -430,6 +430,8 @@ func drink(seat: int, toast: bool = false) -> Dictionary:
 	drinks.append(ev)
 	if died:
 		_kill(seat, contents)
+		_assign_grudges()
+	ev["moments"] = moments(ev)
 	return ev
 
 
@@ -449,6 +451,9 @@ func drink_all() -> Array[Dictionary]:
 		drinks.append(ev)
 		if ev["died"]:
 			_kill(ev["seat"], ev["contents"])
+	for ev in out:
+		ev["moments"] = moments(ev)
+	_assign_grudges()
 	for seat in alive_seats():
 		seats[seat]["rounds_survived"] += 1
 	return out
@@ -457,11 +462,53 @@ func drink_all() -> Array[Dictionary]:
 func _kill(seat: int, contents: Array) -> void:
 	seats[seat]["alive"] = false
 	seats[seat]["died_round"] = round_no
+	# Any ghost holding a grudge against this guest gets their revenge.
+	for g in seats.size():
+		if g != seat and not seats[g]["alive"] and int(seats[g]["grudge"]) == seat:
+			seats[g]["grudges_paid"] += 1
+			seats[g]["grudge"] = -1
+			seats[seat]["haunted_by"] = g
 	fallen_last.append(seat)
 	for c: Dictionary in contents:
 		var by: int = c["by"]
 		if c["k"] == I.POISON and by >= 0 and by != seat:
 			seats[by]["kills"] += 1
+
+
+## Every ghost without a grudge gets a secret living target. Ghosts see inside every cup, and on
+## a Discord call they can say anything, so this gives them a reason to lie: "your cup's fine, drink it".
+func _assign_grudges() -> void:
+	var living := alive_seats()
+	for g in seats.size():
+		if seats[g]["alive"] or int(seats[g]["grudge"]) >= 0:
+			continue
+		var pool: Array[int] = []
+		for t in living:
+			if seats[g]["team"] < 0 or seats[t]["team"] != seats[g]["team"]:
+				pool.append(t)
+		if pool.size() >= 2 or (pool.size() == 1 and living.size() > 1):
+			seats[g]["grudge"] = pool[rng.randi_range(0, pool.size() - 1)]
+
+
+## Headline moments for a death (the clip titles): OWN GOAL, SELF-SWAP, BETRAYED, HAUNTED.
+func moments(ev: Dictionary) -> Array:
+	var out: Array = []
+	if not ev.get("died", false):
+		return out
+	var seat := int(ev["seat"])
+	var bl: Dictionary = ev.get("blame", {})
+	var poisoners: Array = bl.get("poisoners", [])
+	if poisoners.has(seat):
+		out.append({"title": "OWN GOAL!", "sub": "%s drank their OWN poison" % seats[seat]["name"]})
+	if int(bl.get("swapped_by", -1)) == seat:
+		out.append({"title": "SELF-SWAP!", "sub": "%s swapped the deadly cup to THEMSELVES" % seats[seat]["name"]})
+	for p: int in poisoners:
+		if p >= 0 and p != seat and seats[seat]["team"] >= 0 and seats[p]["team"] == seats[seat]["team"]:
+			out.append({"title": "BETRAYED!", "sub": "by their own teammate %s" % seats[p]["name"]})
+	var hb := int(seats[seat].get("haunted_by", -1))
+	if hb >= 0:
+		out.append({"title": "REVENGE FROM BEYOND!", "sub": "The ghost of %s got their grudge: %s" % [seats[hb]["name"], seats[seat]["name"]]})
+	return out
 
 
 ## Who's to blame for a cup: {"poisoners": [seats] (-1 = the laced pot), "swapped_by": seat or -1,
@@ -576,6 +623,7 @@ func private_state(seat: int) -> Dictionary:
 		"dropped": s["dropped"], "role": s["role"], "team": s["team"],
 		"spike": s["role"] == &"butler" and not s["spiked"] and s["alive"] and round_no >= 2,
 		"target": pour_target(seat),
+		"grudge": int(s["grudge"]),
 	}
 	if not s["alive"] and rules.get("ghosts_see_cups", true):
 		var view: Array = []

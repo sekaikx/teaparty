@@ -2,6 +2,7 @@ extends Node
 ## QA harness, added by app.gd when run with `-- --qa ...`:
 ##   --solo                 play a match against bots (the local seat is auto-played)
 ##   --host / --join=IP     two-process network test (host waits for one client, adds bots)
+##   --steam-host / --steam-join=HOST_ID  the same over SteamPeer (use with --fake-steam=N)
 ##   --room=garden          room and --mode=butler
 ##   --speed=N              run timers N times faster
 ##   --shots=DIR            save screenshots at each phase into DIR (needs a real renderer)
@@ -22,6 +23,8 @@ var _shot_n := 0
 var _deadline := 0.0
 var _is_host := false
 var _join_ip := ""
+var _steam := false
+var _steam_join := 0
 var _started := false
 var _took: Dictionary = {}
 var _pace := false
@@ -51,6 +54,11 @@ func _ready() -> void:
 			_is_host = true
 		elif a.begins_with("--join="):
 			_join_ip = a.get_slice("=", 1)
+		elif a == "--steam-host":
+			_is_host = true
+			_steam = true
+		elif a.begins_with("--steam-join="):
+			_steam_join = int(a.get_slice("=", 1))
 	Session.speed = speed
 	Session.match_over.connect(_on_over)
 	_pace = "--pace" in OS.get_cmdline_user_args()
@@ -68,8 +76,18 @@ func _ready() -> void:
 		await get_tree().create_timer(0.8).timeout
 		Net.start_match()
 	elif _is_host:
-		Net.host_game()
+		if _steam:
+			var err := Net.host_steam(false)
+			print("QA STEAM HOST %s" % error_string(err))
+		else:
+			Net.host_game()
 		Net.roster_changed.connect(_host_roster)
+	elif _steam_join != 0:
+		Net.joined_lobby.connect(func() -> void:
+			print("QA STEAM JOINED")
+			await get_tree().create_timer(0.5).timeout
+			Net.set_ready(true))
+		Steamworks.join_lobby(_steam_join)
 	elif _join_ip != "":
 		Net.joined_lobby.connect(func() -> void:
 			await get_tree().create_timer(0.5).timeout
@@ -86,6 +104,13 @@ func _count_event(ev: Dictionary) -> void:
 				_cake_stats["spilled"] = int(_cake_stats.get("spilled", 0)) + 1
 		"round":
 			_rounds += 1
+		"moments":
+			for m: Dictionary in ev.get("list", []):
+				var t := "moment " + String(m["title"])
+				_cake_stats[t] = int(_cake_stats.get(t, 0)) + 1
+		"talking_points":
+			if _pace and _rounds == 1:
+				print("QA TALKING POINTS %s" % str(ev["lines"]))
 
 
 func _apply_rules() -> void:

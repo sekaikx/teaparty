@@ -180,6 +180,8 @@ func choose_rattle(priv: Dictionary, pub: Dictionary) -> int:
 					deadly.append(i)
 	if living.is_empty():
 		return -1
+	# Never warn the guest we hold a grudge against.
+	deadly.erase(int(priv.get("grudge", -1)))
 	if not deadly.is_empty() and rng.randf() < 0.65:
 		return deadly[rng.randi_range(0, deadly.size() - 1)]
 	return living[rng.randi_range(0, living.size() - 1)]
