@@ -47,12 +47,18 @@ func _ready() -> void:
 			# Testing only: tools/fake_steam.gd stands in for GodotSteam over local UDP.
 			steam = (load("res://tools/fake_steam.gd") as GDScript).new(int(a.get_slice("=", 1)))
 	if steam == null and not Engine.has_singleton("Steam"):
-		reason = "GodotSteam isn't installed. In Godot open AssetLib, search \"GodotSteam\", install the GDExtension, restart the editor."
+		if OS.has_feature("template"):
+			var dir := OS.get_executable_path().get_base_dir()
+			reason = "Steam files are missing next to the game. Copy steam_api64.dll and libgodotsteam.windows.template_release.x86_64.dll from the project's addons/godotsteam/win64 folder into %s" % dir
+		else:
+			reason = "GodotSteam isn't installed. In Godot open AssetLib, search \"GodotSteam\", install the GDExtension, restart the editor."
+		print("[Steam] ", reason)
 		return
 	if steam == null:
 		steam = Engine.get_singleton("Steam")
 	OS.set_environment("SteamAppId", str(APP_ID))
 	OS.set_environment("SteamGameId", str(APP_ID))
+	_ensure_appid_file()
 	var id: int = int(steam.call("getSteamID")) if steam.has_method("getSteamID") else 0
 	if id == 0:
 		var res: Variant = _init_steam()
@@ -71,6 +77,7 @@ func _ready() -> void:
 	persona = String(steam.call("getPersonaName"))
 	available = steam_id != 0
 	reason = "" if available else "Steam started but you're not logged in."
+	print("[Steam] ", "connected as %s (%d)" % [persona, steam_id] if available else reason)
 	_connect(&"lobby_created", _on_lobby_created)
 	_connect(&"lobby_joined", _on_lobby_joined)
 	_connect(&"lobby_match_list", _on_lobby_match_list)
@@ -81,6 +88,23 @@ func _ready() -> void:
 		if args[i] == "+connect_lobby" and i + 1 < args.size():
 			_pending_join = int(args[i + 1])
 	status_changed.emit()
+
+
+## An exported game looks for steam_appid.txt next to the .exe (the editor finds the project's).
+## Write it there if it's missing, so a fresh build works online without a manual copy.
+func _ensure_appid_file() -> void:
+	if not OS.has_feature("template"):
+		return
+	var path := OS.get_executable_path().get_base_dir().path_join("steam_appid.txt")
+	if FileAccess.file_exists(path):
+		return
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f:
+		f.store_string(str(APP_ID))
+		f.close()
+		print("[Steam] wrote ", path)
+	else:
+		print("[Steam] couldn't write ", path, " (copy steam_appid.txt there by hand)")
 
 
 func _init_steam() -> Variant:
@@ -156,6 +180,8 @@ func _on_lobby_joined(id: int, _permissions: int, _locked: bool, response: int) 
 	lobby_id = id
 	var owner := int(steam.call(&"getLobbyOwner", id))
 	if owner == steam_id:
+		if not (Net.is_steam and Net.is_host()):
+			lobby_failed.emit("That's your own party. Steam can't connect you to yourself: to test online, use a second PC (or a friend) with a DIFFERENT Steam account.")
 		return   # our own lobby: we're the host already
 	lobby_entered.emit(id, owner)
 

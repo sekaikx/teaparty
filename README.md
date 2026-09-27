@@ -69,8 +69,22 @@ Then:
 - Friends accept the invite in Steam, or paste the code into **JOIN**.
 - **HOST PUBLIC** lists your party under **FIND PUBLIC PARTIES** for anyone running Tea Party.
 
-`steam_appid.txt` (containing `480`) sits in the project root for editor runs. If you export the
-game, put a copy next to the executable. Steam will show you as "playing Spacewar".
+`steam_appid.txt` (containing `480`) sits in the project root for editor runs. An exported game
+writes its own copy next to the .exe on first launch (or copy it there yourself if that folder is
+read-only). Steam will show you as "playing Spacewar".
+
+### Making the .exe
+
+1. **Editor > Manage Export Templates > Download and Install** (once).
+2. **Project > Export**. The **Windows Desktop** preset is already set up, so click **Export Project**.
+   It writes `export/TeaParty.exe` and `export/TeaParty.pck`. Keep them together, they're one game.
+3. Check that `steam_api64.dll` and `libgodotsteam.windows.template_release.x86_64.dll` ended up in
+   `export/`. If not, copy them from `addons/godotsteam/win64/`.
+4. Zip the whole `export` folder for your friends. Everyone needs Steam open and logged in.
+
+**Testing online needs two different Steam accounts** (two PCs, or you and a friend). Steam can't
+connect an account to itself, so two copies on one PC with one account won't see each other.
+The **PLAY ONLINE** screen always says what's wrong with Steam if it isn't connected.
 
 **"Can't open dynamic library ... Error 127"?** That's two different `steam_api64.dll` files
 clashing. Older versions of this project bundled a second Steam addon, `addons/steam-multiplayer-peer`.

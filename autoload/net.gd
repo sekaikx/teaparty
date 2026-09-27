@@ -168,6 +168,7 @@ func _enter_as_host() -> void:
 
 
 func _fail(reason: String) -> void:
+	print("[Net] ", reason)
 	if multiplayer.multiplayer_peer:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
