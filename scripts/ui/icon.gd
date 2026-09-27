@@ -1,13 +1,16 @@
 class_name TeaIcon
 extends Control
-## Hand-drawn icons for ingredients and items (no image files): vials, a sugar cube, a tea
-## leaf, crossed arrows, a nose, two clinking cups, an eye. Also the face-down card back.
+## Icons for ingredients and items, from the hand-drawn SVG set in assets/icons/ui (the same
+## ink-outline candy style as the app icon). Also the face-down card back.
 
 enum Kind { INGREDIENT, ITEM, BACK, SPIKE }
+
+const DIR := "res://assets/icons/ui/"
 
 var kind := Kind.INGREDIENT
 var value := 0
 var ink := Color("1d1128")
+static var _tex: Dictionary = {}
 
 
 static func make(p_kind: Kind, p_value: int, px: float = 48.0) -> TeaIcon:
@@ -16,10 +19,41 @@ static func make(p_kind: Kind, p_value: int, px: float = 48.0) -> TeaIcon:
 	t.value = p_value
 	t.custom_minimum_size = Vector2(px, px)
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	return t
 
 
+static func texture(file: String) -> Texture2D:
+	if not _tex.has(file):
+		_tex[file] = load(DIR + file + ".svg") if ResourceLoader.exists(DIR + file + ".svg") else null
+	return _tex[file]
+
+
+func icon_name() -> String:
+	match kind:
+		Kind.BACK:
+			return "back"
+		Kind.SPIKE:
+			return "spike"
+		Kind.INGREDIENT:
+			return {Defs.Ingredient.POISON: "poison", Defs.Ingredient.ANTIDOTE: "antidote", Defs.Ingredient.SUGAR: "sugar"}.get(value, "plain")
+		Kind.ITEM:
+			return {Defs.Item.SWAP: "swap", Defs.Item.SNIFF: "sniff", Defs.Item.TOAST: "toast", Defs.Item.PEEK: "watch"}.get(value, "back")
+	return "back"
+
+
 func _draw() -> void:
+	var s := minf(size.x, size.y)
+	var o := (size - Vector2(s, s)) * 0.5
+	var tex := texture(icon_name())
+	if tex:
+		draw_texture_rect(tex, Rect2(o, Vector2(s, s)), false)
+		return
+	_draw_fallback()
+
+
+## The old code-drawn versions, only if an SVG is missing.
+func _draw_fallback() -> void:
 	var s := minf(size.x, size.y)
 	var o := (size - Vector2(s, s)) * 0.5
 	var c := o + Vector2(s, s) * 0.5

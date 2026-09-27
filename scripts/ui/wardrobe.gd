@@ -132,8 +132,10 @@ func _rebuild_guest(look: Dictionary) -> void:
 	_cup = TeaCup.new()
 	_stage.add_child(_cup)
 	_cup.setup(0, StringName(str(look.get("cup", &"porcelain"))))
-	_cup.position = Vector3(1.0, 0.0, 0.7)
+	_cup.position = Vector3(0.5, 1.0, 0.5)
 	_cup.set_filled(true)
+	# Hold the teacup up, cheers-style, so the cup you picked is right next to the face.
+	_guest.raise_cup(_cup)
 	_spin = true
 
 

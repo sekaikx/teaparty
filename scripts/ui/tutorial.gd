@@ -20,7 +20,7 @@ const PAGES := [
 		"text": "Everyone raises their cup and drinks. Scared yours is poisoned? Press F to throw a cake at it and it spills. Whoever drank poison falls. The game never says who poured it."},
 	{"title": "5. THE MEETING + THE VOTE", "color": Color("3ddc97"),
 		"icons": [["key", "V"], ["arrow"], ["ghost"]],
-		"text": "Now talk (Discord, or hold V). \"Where did YOU pour?\" \"I saw Clara pour into Ada's cup!\" \"No, I poured sugar into Baron's!\" Someone is lying. Then vote: most votes gets thrown out and their role is shown. Dead guests stay quiet, like Among Us."},
+		"text": "Now talk (Discord, or hold V). \"Where did YOU pour?\" \"I saw Clara pour into Ada's cup!\" \"No, I poured sugar into Baron's!\" Someone is lying (the WHO SAID WHAT board flags stories that don't add up). The poisoned get one line of last words. Then vote: most votes gets thrown out."},
 ]
 
 var _page := 0

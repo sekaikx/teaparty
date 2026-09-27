@@ -75,6 +75,10 @@ func _run() -> void:
 		_check("item card present", ic != null)
 		if ic:
 			var before_a: int = int(Session.cup_of(Session.my_seat)["id"])
+			var my_swap := [false]
+			Session.game_event.connect(func(ev: Dictionary) -> void:
+				if ev.get("type", "") == "swap" and int(ev["seat"]) == Session.my_seat:
+					my_swap[0] = true)
 			await _click(ic.get_global_rect().get_center())
 			_check("targeting started", table.targeting >= 0)
 			var other := table.pour_target()
@@ -87,7 +91,8 @@ func _run() -> void:
 			while Session.phase == Defs.Phase.ITEMS and w < 30.0:
 				await get_tree().process_frame
 				w += get_process_delta_time()
-			_check("swap moved my cup", int(Session.cup_of(Session.my_seat)["id"]) != before_a)
+			# (Bots can hold SWAP too and swap it straight back, so check that MY swap played.)
+			_check("my swap played", my_swap[0])
 	else:
 		print("INPUT SKIP item turn (not reached)")
 	# 4. The meeting: say something true with a quick button, then ready up.

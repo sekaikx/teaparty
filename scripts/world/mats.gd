@@ -88,6 +88,20 @@ static func highlight(color: Color) -> StandardMaterial3D:
 	return m
 
 
+## The ink outline pass (an inverted hull) for the cartoon look. Set as a material's next_pass.
+static func outline() -> StandardMaterial3D:
+	if _cache.has("outline"):
+		return _cache["outline"]
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color("1d1128")
+	m.cull_mode = BaseMaterial3D.CULL_FRONT
+	m.grow = true
+	m.grow_amount = 0.011
+	_cache["outline"] = m
+	return m
+
+
 static func mesh(parent: Node3D, m: Mesh, mat: Material, pos: Vector3 = Vector3.ZERO, rot_deg: Vector3 = Vector3.ZERO, scl: Vector3 = Vector3.ONE) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = m

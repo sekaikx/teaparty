@@ -289,6 +289,7 @@ func _start_round() -> void:
 	_cakes.clear()
 	_pending_end = {}
 	_round_log.clear()
+	_last_words.clear()
 	var pub := _rules.public_state()
 	for s: int in _bots:
 		(_bots[s] as BotBrain).new_round(pub)
@@ -407,6 +408,12 @@ func _begin_talk() -> void:
 		_rules.seats[s]["ready"] = false
 	_set_phase(P.TALK, float(_rules.rules["talk_time"]))
 	_emit({"type": "talking_points", "lines": _talking_points()})
+	# Bots poisoned at this toast say their last words first.
+	for s: int in _bots:
+		if not _rules.is_alive(s) and not _rules.seats[s]["ejected"] and int(_rules.seats[s]["died_round"]) == _rules.round_no:
+			var lw := (_bots[s] as BotBrain).last_words(_rules.private_state(s), _rules.public_state())
+			if not lw.is_empty():
+				_do_claim(s, lw)
 	var talk := float(_rules.rules["talk_time"])
 	for s: int in _bots:
 		var b: BotBrain = _bots[s]
@@ -522,6 +529,9 @@ func _push(total: float = -1.0) -> void:
 		cakes[str(k)] = _cakes[k]
 	pub["cakes"] = cakes
 	pub["resolving"] = _resolving
+	pub["last_words_used"] = _last_words.keys()
+	for i in _rules.seats.size():
+		pub["died_round_%d" % i] = int(_rules.seats[i]["died_round"])
 	pub["left"] = maxf(_timer, 0.0)
 	pub["total"] = total if total >= 0.0 else float(public.get("total", _timer))
 	_recv_public.rpc(pub)
@@ -684,6 +694,8 @@ func _rq_rattle(target: int) -> void:
 
 
 var _claim_ready: Dictionary = {}
+## Seats that already said their last words this round.
+var _last_words: Dictionary = {}
 var _last_reveal: Array = []
 const CAKES_LIVING := 3
 const CAKES_GHOST := 2
@@ -769,9 +781,23 @@ func _do_pour(s: int, card_index: int, target: int) -> void:
 		_emit_private(s, {"type": "error", "text": "You can't pour there."})
 
 
+## Who may still say their last words this meeting (poisoned at this round's toast, once).
+func can_last_words(seat: int) -> bool:
+	return phase == P.TALK and seat >= 0 and seat < Session.seat_count() and not bool(seat_info(seat).get("alive", true)) \
+		and not bool(seat_info(seat).get("ejected", false)) and int(public.get("round", 0)) == int(public.get("died_round_%d" % seat, -1)) \
+		and not (public.get("last_words_used", []) as Array).has(seat)
+
+
 func _do_claim(s: int, claim: Dictionary) -> void:
-	if s < 0 or not _rules.is_alive(s):
+	if s < 0:
 		return
+	var last := false
+	if not _rules.is_alive(s):
+		# The freshly poisoned get ONE line (their last words) at this meeting; other ghosts stay quiet.
+		if phase != P.TALK or _rules.seats[s]["ejected"] or int(_rules.seats[s]["died_round"]) != _rules.round_no or _last_words.has(s):
+			return
+		_last_words[s] = true
+		last = true
 	var kind := StringName(str(claim.get("kind", "")))
 	if not Defs.CLAIMS.has(kind):
 		return
@@ -783,7 +809,10 @@ func _do_claim(s: int, claim: Dictionary) -> void:
 	if now < float(_claim_ready.get(s, 0.0)):
 		return
 	_claim_ready[s] = now + 1.2 / speed
+	c["last"] = last
 	_emit(c)
+	if last:
+		_push(_timer)
 	for b: int in _bots:
 		(_bots[b] as BotBrain).hear(c)
 

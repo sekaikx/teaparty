@@ -51,6 +51,7 @@ var _arrow_target := Vector3.INF
 func build(roster: Array, rules: Dictionary, seat: int) -> void:
 	name = "World"
 	my_seat = seat
+	layout.night = bool(rules.get("night", false))
 	add_child(layout.build(StringName(rules.get("room", &"parlor")), roster.size()))
 	for i in roster.size():
 		var info: Dictionary = roster[i]

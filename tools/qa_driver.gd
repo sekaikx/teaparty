@@ -115,6 +115,8 @@ func _count_event(ev: Dictionary) -> void:
 
 
 func _apply_rules() -> void:
+	if "--night" in OS.get_cmdline_user_args():
+		Net.set_rule("night", true)
 	if _pace:
 		Net.set_rule("room", room)
 		Net.set_rule("mode", mode)

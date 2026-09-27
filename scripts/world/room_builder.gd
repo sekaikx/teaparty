@@ -23,6 +23,8 @@ var chairs: Array[Node3D] = []
 ## Where each guest's place card stands on the table.
 var card_spots: Array[Vector3] = []
 var outdoor := false
+## Night party: moonlight, dim sky, candles on the table (and fireflies outdoors).
+var night := false
 
 
 func build(room: StringName, count: int) -> Node3D:
@@ -53,7 +55,68 @@ func build(room: StringName, count: int) -> Node3D:
 	_table(cloth, trim)
 	_place_seats(room, count)
 	_colliders(room)
+	if night:
+		_apply_night()
 	return root
+
+
+func _apply_night() -> void:
+	for n in root.find_children("*", "WorldEnvironment", true, false):
+		var env: Environment = (n as WorldEnvironment).environment
+		if env.background_mode == Environment.BG_SKY and env.sky and env.sky.sky_material is ProceduralSkyMaterial:
+			var sky := env.sky.sky_material as ProceduralSkyMaterial
+			sky.sky_top_color = Color("0b1030")
+			sky.sky_horizon_color = Color("2a2f5a")
+			sky.ground_horizon_color = Color("1b2030")
+			sky.ground_bottom_color = Color("0a0c14")
+			sky.sky_energy_multiplier = 0.6
+		else:
+			env.background_color = env.background_color.darkened(0.5).lerp(Color("070812"), 0.4)
+		env.ambient_light_energy *= 0.4
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_color = Color("3a4a8a")
+		env.tonemap_exposure = 0.9
+	for n in root.find_children("*", "DirectionalLight3D", true, false):
+		var d := n as DirectionalLight3D
+		d.light_color = Color("9fb6ff")
+		d.light_energy *= 0.3
+	# Room lamps turned right down: the candles on the table do the work.
+	for n in root.find_children("*", "OmniLight3D", true, false):
+		var o := n as OmniLight3D
+		o.light_energy *= 0.3
+	# Candles around the table, each with a small warm light.
+	var k := maxi(6, cup_spots.size())
+	for i in k:
+		var a := TAU * (i + 0.5) / k
+		var p := Vector3(cos(a) * table_radii.x * 0.62, TABLE_Y, sin(a) * table_radii.y * 0.62)
+		Mats.mesh(root, Mats.cylinder(0.03, 0.035, 0.18, 10), Mats.solid(Color("f6efd9"), 0.6), p + Vector3(0, 0.09, 0))
+		Mats.mesh(root, Mats.sphere(0.025, 0.06), Mats.glow(Color("ffc56a"), 5.0), p + Vector3(0, 0.21, 0))
+		var l := OmniLight3D.new()
+		l.light_color = Color("ffb35a")
+		l.light_energy = 0.28
+		l.omni_range = 2.2
+		l.omni_attenuation = 1.6
+		l.position = p + Vector3(0, 0.3, 0)
+		root.add_child(l)
+		candles.append(l)
+	if outdoor:
+		var ff := CPUParticles3D.new()
+		ff.amount = 40
+		ff.lifetime = 6.0
+		ff.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		ff.emission_box_extents = Vector3(7, 1.2, 7)
+		ff.position = Vector3(0, 1.4, 0)
+		ff.gravity = Vector3.ZERO
+		ff.initial_velocity_min = 0.05
+		ff.initial_velocity_max = 0.25
+		ff.direction = Vector3(0, 1, 0)
+		ff.spread = 180.0
+		var q := SphereMesh.new()
+		q.radius = 0.025
+		q.height = 0.05
+		q.material = Mats.glow(Color("d6ff7a"), 6.0)
+		ff.mesh = q
+		root.add_child(ff)
 
 
 # ---------------------------------------------------------------- seats and table
@@ -310,10 +373,12 @@ func _parlor() -> void:
 	fire.shadow_normal_bias = 2.0
 	fire.position = Vector3(0, 0.9, 1.0)
 	fp.add_child(fire)
+	# The fire is the one bright light left at night (at 60%).
+	var fk := 0.6 if night else 1.0
 	var ftw := fire.create_tween().set_loops()
-	ftw.tween_property(fire, "light_energy", 2.6, 0.23)
-	ftw.tween_property(fire, "light_energy", 1.9, 0.31)
-	ftw.tween_property(fire, "light_energy", 2.3, 0.17)
+	ftw.tween_property(fire, "light_energy", 2.6 * fk, 0.23)
+	ftw.tween_property(fire, "light_energy", 1.9 * fk, 0.31)
+	ftw.tween_property(fire, "light_energy", 2.3 * fk, 0.17)
 	var etw := embers.create_tween().set_loops()
 	etw.tween_property(embers, "scale", Vector3(1.5, 0.9, 0.6), 0.4)
 	etw.tween_property(embers, "scale", Vector3(1.35, 0.75, 0.6), 0.35)

@@ -3,7 +3,7 @@ extends RefCounted
 ## The whole game as pure data: seats, roles, hands, cups, evidence, votes and win conditions.
 ## No nodes, no networking; Session (the host) drives it and tools/test_rules.gd exercises it.
 ##
-## "Murder at Teatime", a hidden-killer game like Among Us, around a tea table:
+## "Murder at Teatime", a hidden-killer social deduction game around a tea table:
 ##   SERVE (in the dark)  every guest secretly pours one card into ANY other guest's cup.
 ##                        The secret POISONER(s) hold poison. Innocents hold sugar, plain tea and,
 ##                        for one lucky guest, an antidote.
@@ -671,7 +671,7 @@ func public_state() -> Dictionary:
 			"alive": s["alive"], "team": -1, "poured": s["poured"], "item_done": s["item_done"],
 			"ready": s["ready"], "voted": s["voted"], "rattles": s["rattles"], "hand_count": (s["hand"] as Array).size(),
 			"item_count": (s["items"] as Array).size(), "pour_target": -1, "ejected": s["ejected"],
-			# Roles are shown once you're out (dead or thrown out), like Among Us "confirm ejects".
+			# Roles are shown once you're out (dead or thrown out).
 			"role": s["role"] if not s["alive"] else &"",
 		})
 	var cs: Array = []

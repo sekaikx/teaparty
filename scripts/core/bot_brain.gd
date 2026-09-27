@@ -203,6 +203,19 @@ func next_claim(priv: Dictionary, pub: Dictionary) -> Dictionary:
 	return {}
 
 
+## Poisoned at the toast: one last line. Innocents tell the truth about what they saw; a
+## poisoner who drank their own poison blames someone on the way out.
+func last_words(priv: Dictionary, pub: Dictionary) -> Dictionary:
+	_sync(priv)
+	for e: Dictionary in evidence:
+		if String(e.get("kind", "")) in ["saw", "watch"] and int(e.get("into", -1)) >= 0 and not poisoner:
+			return {"kind": &"saw" if e["kind"] == "saw" else &"watch", "a": int(e["who"]), "b": int(e["into"])}
+	var others := _others_alive(pub)
+	if poisoner and not others.is_empty():
+		return {"kind": &"sus", "a": _pick(others)}
+	return {}
+
+
 ## How suspicious each living guest looks to this bot. Truth first, then what others said.
 func _score(pub: Dictionary) -> Dictionary:
 	var score := {}

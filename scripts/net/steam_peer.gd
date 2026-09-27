@@ -50,6 +50,10 @@ var _current: Dictionary = {}
 var _ping_t := 0.0
 ## Networking Messages available (and not failing)?
 var _msgs := false
+## Which transport actually WORKS with each Steam id: "msg" once something arrived over Networking
+## Messages from them, otherwise the older P2P API. (A Messages send can report OK and still time
+## out later, 5003, as seen in real logs; P2P got through in the same session.)
+var _via: Dictionary = {}
 var _hello_tries := 0
 
 
@@ -122,7 +126,9 @@ func _on_msg_request(remote_id: int) -> void:
 
 
 func _on_msg_failed(reason: int, remote_id: int, _state: int = 0, debug: String = "") -> void:
-	log_line("messages session with %d failed (%d): %s" % [remote_id, reason, debug])
+	# Normal when Networking Messages can't reach someone: the P2P api carries the game instead.
+	if _via.get(remote_id, "") == "msg":
+		log_line("messages session with %d failed (%d): %s" % [remote_id, reason, debug])
 
 
 func _on_session_fail(remote_id: int, err: int = 0) -> void:
@@ -155,18 +161,30 @@ func _drop(uid: int) -> void:
 
 # ---------------------------------------------------------------- sending
 
+## Data goes over ONE transport per peer (so nothing arrives twice): Messages only once that peer
+## has been heard over Messages, else P2P.
 func _send_raw(steam_id: int, data: PackedByteArray, reliable: bool) -> bool:
 	var rel := reliable or data.size() > UNRELIABLE_MAX
-	if _msgs:
+	if _msgs and _via.get(steam_id, "") == "msg":
 		var res := int(steam.call(&"sendMessageToUser", steam_id, data, (MSG_RELIABLE if rel else MSG_UNRELIABLE) | MSG_AUTO_RESTART, STEAM_CHANNEL))
 		if res == RESULT_OK:
 			return true
-		log_line("sendMessageToUser -> %d (result %d), trying the p2p api" % [steam_id, res])
+		log_line("sendMessageToUser -> %d (result %d), using the p2p api" % [steam_id, res])
+	return _send_p2p(steam_id, data, rel)
+
+
+func _send_p2p(steam_id: int, data: PackedByteArray, rel: bool) -> bool:
 	return bool(steam.call(&"sendP2PPacket", steam_id, data, SEND_RELIABLE if rel else SEND_UNRELIABLE, STEAM_CHANNEL))
 
 
+## Handshakes and pings go over BOTH transports: they're harmless if they arrive twice, and they
+## let each side discover which transport really works.
 func _send_ctrl(steam_id: int, cmd: int) -> void:
-	_send_raw(steam_id, PackedByteArray([KIND_CTRL, cmd]), cmd != CTRL_PING)
+	var data := PackedByteArray([KIND_CTRL, cmd])
+	var rel := cmd != CTRL_PING
+	_send_p2p(steam_id, data, rel)
+	if _msgs:
+		steam.call(&"sendMessageToUser", steam_id, data, (MSG_RELIABLE if rel else MSG_UNRELIABLE) | MSG_AUTO_RESTART, STEAM_CHANNEL)
 
 
 func _put_packet_script(buffer: PackedByteArray) -> Error:
@@ -203,7 +221,7 @@ func _poll() -> void:
 				var data: PackedByteArray = md.get("payload", md.get("data", PackedByteArray()))
 				var from := _sender_of(md)
 				if data.size() >= 2 and from != 0:
-					_handle(from, data)
+					_handle(from, data, "msg")
 			if msgs.size() < 64:
 				break
 	var guard := 0
@@ -216,7 +234,7 @@ func _poll() -> void:
 		var data: PackedByteArray = pkt.get("data", PackedByteArray())
 		var from := int(pkt.get("remote_steam_id", pkt.get("steam_id_remote", pkt.get("steam_id_from", 0))))
 		if data.size() >= 2 and from != 0:
-			_handle(from, data)
+			_handle(from, data, "p2p")
 	var now := Time.get_ticks_msec() / 1000.0
 	_ping_t -= get_process_delta()
 	if _ping_t <= 0.0:
@@ -248,7 +266,14 @@ static func get_process_delta() -> float:
 	return ml.root.get_process_delta_time() if ml else 0.016
 
 
-func _handle(from: int, data: PackedByteArray) -> void:
+## The transport a peer's handshake first arrived on is the one we use for their data from then on.
+func _learn(from: int, via: String) -> void:
+	if not _via.has(from):
+		_via[from] = via
+		log_line("talking to %d over %s" % [from, "Networking Messages" if via == "msg" else "the P2P api"])
+
+
+func _handle(from: int, data: PackedByteArray, via: String = "p2p") -> void:
 	var uid := int(_by_steam.get(from, 0))
 	if uid != 0:
 		_heard[uid] = Time.get_ticks_msec() / 1000.0
@@ -256,12 +281,14 @@ func _handle(from: int, data: PackedByteArray) -> void:
 		match int(data[1]):
 			CTRL_HELLO:
 				if _server and not _refuse:
+					_learn(from, via)
 					if uid == 0:
 						log_line("hello from %d: welcome" % from)
 						_add(uid_for(from), from)
 					_send_ctrl(from, CTRL_WELCOME)
 			CTRL_WELCOME:
 				if not _server and from == _host_steam and _status == MultiplayerPeer.CONNECTION_CONNECTING:
+					_learn(from, via)
 					log_line("the host let us in")
 					_status = MultiplayerPeer.CONNECTION_CONNECTED
 					peer_connected.emit(1)

@@ -112,16 +112,17 @@ func titles_unlocked() -> Array[StringName]:
 	return out
 
 
+## Every room, mode and lobby rule is open to everyone from the start (levels only give cosmetics).
 func is_unlocked_room(id: StringName) -> bool:
-	return level() >= int(Defs.ROOMS[id]["level"])
+	return Defs.ROOMS.has(id)
 
 
 func is_unlocked_mode(id: StringName) -> bool:
-	return level() >= int(Defs.MODES[id]["level"])
+	return Defs.MODES.has(id)
 
 
 func custom_rules_unlocked() -> bool:
-	return level() >= Defs.CUSTOM_RULES_LEVEL
+	return true
 
 
 # ---------------------------------------------------------------- rewards
@@ -156,15 +157,15 @@ func award(me: Dictionary, won: bool, was_butler: bool, awards: int = 0, fun: Di
 		if not before_titles.has(t):
 			new_titles.append(Cosmetics.title_name(t))
 	var unlocks: Array = []
+	# Rooms and rules are all open from the start: levels bring new cosmetics to buy instead.
 	for l in range(before_level + 1, level() + 1):
-		for id: StringName in Defs.ROOMS:
-			if int(Defs.ROOMS[id]["level"]) == l:
-				unlocks.append("Room: " + String(Defs.ROOMS[id]["name"]))
-		for id: StringName in Defs.MODES:
-			if int(Defs.MODES[id]["level"]) == l:
-				unlocks.append("Mode: " + String(Defs.MODES[id]["name"]))
-		if l == Defs.CUSTOM_RULES_LEVEL:
-			unlocks.append("Custom lobby rules")
+		var n := 0
+		for cat: Dictionary in [Cosmetics.HATS, Cosmetics.CUPS]:
+			for id: StringName in cat:
+				if int(cat[id].get("level", 1)) == l:
+					n += 1
+		if n > 0:
+			unlocks.append("%d new item%s in the Wardrobe" % [n, "s" if n > 1 else ""])
 	save_profile()
 	changed.emit()
 	return {"xp": gained_xp, "coins": gained_coins + 50 * levels, "levels": levels, "level": level(),

@@ -37,7 +37,7 @@ const PHASE_NAMES := {
 	Phase.VOTE: "Vote", Phase.EJECT: "Thrown out",
 }
 
-## Modes and rooms, with the player level that unlocks them.
+## Modes and rooms (all open to everyone; "level" is kept only for old saves).
 const MODES := {
 	&"classic": {"name": "Murder at Teatime", "level": 1, "desc": "A secret poisoner (two with 8 guests) is at the table. Find them and vote them out before they poison everyone."},
 }
@@ -48,8 +48,8 @@ const ROOMS := {
 	&"banquet": {"name": "Royal Banquet", "level": 5, "seats": 8, "desc": "A candlelit hall and a long table for eight."},
 }
 
-## Custom lobby rules (beyond players / bots / room / mode) unlock at this level.
-const CUSTOM_RULES_LEVEL := 6
+## Custom lobby rules are open to everyone (kept for old callers).
+const CUSTOM_RULES_LEVEL := 1
 
 const TEAM_NAMES := ["Earl Grey", "Darjeeling"]
 const TEAM_COLORS := [Color("7c4596"), Color("c2702a")]
@@ -74,6 +74,7 @@ const DEFAULT_RULES := {
 	"ghosts_see_cups": false,
 	"ghosts_talk_to_living": false,
 	"helium": false,
+	"night": false,
 	"items_enabled": [Item.SWAP, Item.SNIFF, Item.PEEK],
 }
 

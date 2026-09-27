@@ -10,10 +10,16 @@ static func make(p_what: String, px: float) -> Doodle:
 	d.what = p_what
 	d.custom_minimum_size = Vector2(px, px)
 	d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	d.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	return d
 
 
 func _draw() -> void:
+	var tex := TeaIcon.texture(what)
+	if tex:
+		var side := minf(size.x, size.y)
+		draw_texture_rect(tex, Rect2((size - Vector2(side, side)) * 0.5, Vector2(side, side)), false)
+		return
 	var s := minf(size.x, size.y)
 	var c := size * 0.5
 	var ink := Ui.INK

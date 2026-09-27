@@ -85,6 +85,11 @@ var _vote: PanelContainer
 var _vote_box: GridContainer
 var _vote_sig := ""
 var _talking: Array = []
+var _board: PanelContainer
+var _board_box: VBoxContainer
+## This round's meeting claims and the reveal, for the board.
+var _said: Array = []
+var _revealed: Array = []
 
 
 func setup(p_table: TableView) -> void:
@@ -167,6 +172,16 @@ func _build_side() -> void:
 	_feed.custom_minimum_size = Vector2(300, 0)
 	_root.add_child(_feed)
 	Ui.pin(_feed, Vector2(1, 0), Vector2(1, 0), Vector2(-14, 14))
+	# The claims board: who said what at the meeting, and which stories don't add up.
+	_board = Ui.panel(Color(Ui.PLUM_DARK, 0.94), 18, Vector4(14, 10, 14, 12))
+	_board.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_board.custom_minimum_size = Vector2(330, 0)
+	_board.visible = false
+	_root.add_child(_board)
+	Ui.pin(_board, Vector2(1, 0), Vector2(1, 0), Vector2(-14, 14))
+	_board_box = Ui.vbox(4)
+	_board_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_board.add_child(_board_box)
 
 
 func _build_bottom() -> void:
@@ -355,7 +370,7 @@ func _watch_fps(delta: float) -> void:
 			p.queue_free(), Ui.MINT, 16, Vector2(0, 40)))
 		h.add_child(Ui.button("NO", func() -> void: p.queue_free(), Ui.PLUM_LIGHT, 16, Vector2(60, 40)))
 		_root.add_child(p)
-		Ui.pin(p, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -150))
+		Ui.pin(p, Vector2(0.5, 0), Vector2(0.5, 0), Vector2(0, 150))
 
 
 func _input(event: InputEvent) -> void:
@@ -596,6 +611,8 @@ func _coach_text_for() -> Array:
 	if not Session.am_alive():
 		if ph in [P.DRINK] and Session.cakes_left() > 0:
 			return ["GHOST CAKES! (F)", "Knock a cup out of someone's hands. You don't know which cups are deadly either.", Color("a7c7ff")]
+		if ph == P.TALK and Session.can_last_words(Session.my_seat):
+			return ["YOU WERE POISONED: YOUR LAST WORDS", "Say ONE thing with the bar below (true... or not). Then you're a ghost.", Color("a7c7ff")]
 		if ph in [P.TALK, P.VOTE]:
 			return ["YOU'RE DEAD: STAY QUIET", "Ghosts don't talk to the living (mute on Discord). Watch them squirm.", Color("a7c7ff")]
 		if ph in [P.POUR, P.ITEMS] and int(Session.seat_info(Session.my_seat).get("rattles", 0)) > 0:
@@ -829,10 +846,69 @@ func _truth_claims() -> Array:
 	return out
 
 
+## Everything said at this meeting, per guest, plus the stories that contradict the reveal or
+## each other. This is the "wait, that doesn't add up" moment made visible.
+func _refresh_board() -> void:
+	_board.visible = Session.phase in [P.TALK, P.VOTE] and not _said.is_empty()
+	_feed.visible = not _board.visible
+	for c in _board_box.get_children():
+		c.queue_free()
+	var nm := func(i: int) -> String: return Session.seat_name(i)
+	_board_box.add_child(Ui.label("WHO SAID WHAT", 17, Ui.YELLOW, 800))
+	var latest := {}
+	for c: Dictionary in _said:
+		latest["%d_%s" % [int(c["seat"]), String(c["kind"])]] = c
+	for key: String in latest:
+		var c: Dictionary = latest[key]
+		var line := "%s%s: %s" % [nm.call(int(c["seat"])), " (last words)" if c.get("last", false) else "", Defs.claim_text(c, nm)]
+		_board_box.add_child(Ui.wrap(Ui.label(line, 13, Ui.CREAM, 700), 300))
+	var odd := _contradictions()
+	if not odd.is_empty():
+		_board_box.add_child(Ui.label("DOESN'T ADD UP:", 16, Ui.PINK, 800))
+		for line: String in odd:
+			_board_box.add_child(Ui.wrap(Ui.label("! " + line, 13, Color("ffb3c8"), 700), 300))
+
+
+func _contradictions() -> Array[String]:
+	var out: Array[String] = []
+	var nm := func(i: int) -> String: return Session.seat_name(i)
+	var poured := {}   # seat -> latest "poured" claim
+	for c: Dictionary in _said:
+		if StringName(c["kind"]) == &"poured":
+			poured[int(c["seat"])] = c
+	# 1. The reveal: what really went into the poisoned cups.
+	for r: Dictionary in _revealed:
+		var cup := int(r["seat"])
+		var kinds: Array = r["kinds"]
+		var harmless := 0
+		for k: int in kinds:
+			if k != Defs.Ingredient.POISON:
+				harmless += 1
+		var into: Array = []
+		for s: int in poured:
+			if int(poured[s]["a"]) == cup:
+				into.append(s)
+				var k := int(poured[s].get("k", -1))
+				if k >= 0 and k != Defs.Ingredient.POISON and not kinds.has(k):
+					out.append("%s says %s went into %s's cup, but there was no %s in it." % [nm.call(s), Defs.ingredient_name(k).to_upper(), nm.call(cup), Defs.ingredient_name(k).to_lower()])
+		if into.size() > harmless:
+			out.append("%d guests say they poured into %s's cup, but only %d harmless drink%s went in." % [into.size(), nm.call(cup), harmless, "" if harmless == 1 else "s"])
+	# 2. A sighting against someone's own story.
+	for c: Dictionary in _said:
+		if StringName(c["kind"]) in [&"saw", &"watch"]:
+			var who := int(c["a"])
+			if poured.has(who) and int(poured[who]["a"]) != int(c["b"]) and who != int(c["seat"]):
+				out.append("%s says they poured into %s's cup, but %s says they saw them pour into %s's." % [nm.call(who), nm.call(int(poured[who]["a"])), nm.call(int(c["seat"])), nm.call(int(c["b"]))])
+	return out
+
+
 func _refresh_meeting() -> void:
 	var ph := Session.phase
 	var alive := Session.am_alive()
-	_claims.visible = alive and ph == P.TALK
+	var last := not alive and Session.can_last_words(Session.my_seat)
+	_claims.visible = (alive or last) and ph == P.TALK
+	_board.visible = ph in [P.TALK, P.VOTE] and not _said.is_empty()
+	_feed.visible = not _board.visible
 	if _claims.visible:
 		var sig := str(Session.private.get("evidence", [])) + str(Session.public.get("seats", []).size())
 		if sig != _claim_sig:
@@ -883,6 +959,8 @@ func _on_event(ev: Dictionary) -> void:
 	match String(ev.get("type", "")):
 		"round":
 			_talking = []
+			_said = []
+			_revealed = []
 			_moment_q.clear()
 			_reveal.visible = false
 			_note.visible = false
@@ -917,7 +995,9 @@ func _on_event(ev: Dictionary) -> void:
 			var nm := func(i: int) -> String: return Session.seat_name(i)
 			var text := Defs.claim_text(ev, nm)
 			var who := int(ev["seat"])
-			_log("%s: \"%s\"" % [name_of.call(who), text], Ui.CREAM if who != Session.my_seat else Ui.YELLOW)
+			_said.append(ev)
+			_refresh_board()
+			_log("%s%s: \"%s\"" % [name_of.call(who), " (last words)" if ev.get("last", false) else "", text], Ui.CREAM if who != Session.my_seat else Ui.YELLOW)
 			if table and who < table.guests.size():
 				table.guests[who].say(text, 4.0)
 		"vote_start":
@@ -990,6 +1070,7 @@ func _on_event(ev: Dictionary) -> void:
 						_log("%s was poisoned. Who did it?" % n, Ui.PINK))
 		"reveal":
 			var list: Array = ev["cups"]
+			_revealed = list
 			var tw := create_tween()
 			tw.tween_interval(4.5)
 			tw.tween_callback(func() -> void: _show_reveal(list))

@@ -1,6 +1,6 @@
 # Tea Party
 
-**Murder at Teatime**: an Among Us-style party game at a tea table, for 4 to 8 friends. One of
+**Murder at Teatime**: a social deduction party game at a tea table, for 4 to 8 friends. One of
 you is secretly the **POISONER**. Every round the lights go out and everyone pours something into
 someone's cup; you only glimpse one pour. The toast: somebody falls. Then the meeting: *"Where
 did YOU pour?" "I saw Clara pour into Ada's cup!" "That's a lie, I poured sugar into Baron's!"*
@@ -29,7 +29,7 @@ Poisoners win when there are as many poisoners as guests left.
 | **The glimpse** | When the lights come back, most guests learn ONE true thing: *"In the dark you SAW Baron pour into Ada's cup."* (Sometimes the candle flickers and you saw nothing.) It's in your **WHAT YOU KNOW** panel. |
 | **2 ITEMS** | Everyone picks at once: **Sniff** a cup (is it poisoned right now? sugar hides it), **Watch** a guest (you learn whose cup they poured into), **Swap** two cups (everyone sees it). Or pass. |
 | **3 TOAST** | Everyone raises their cup for 5 seconds. Think yours is poisoned? Press **F** to throw a cake at it and it spills. Hit a face and they drop their cup. Then everyone drinks. The poisoned fall, and **the game doesn't say who poured it**. You only see what was in the deadly cup. |
-| **4 MEETING** | Talk (Discord, or hold **V**). Say where you poured and what you saw. Players without voice use the **SAY** bar (quick buttons for the truth, or build a lie). The **TALK ABOUT THIS** box suggests questions. Press **READY TO VOTE**. |
+| **4 MEETING** | Talk (Discord, or hold **V**). Say where you poured and what you saw. Players without voice use the **SAY** bar (quick buttons for the truth, or build a lie). Whoever was just poisoned gets **one line of last words** before going silent. The **WHO SAID WHAT** board lists every claim and flags stories that **don't add up** (someone says they poured sugar into the victim's cup but the reveal shows no sugar; three people claim the same cup; a sighting contradicts an alibi). Press **READY TO VOTE**. |
 | **5 VOTE** | Click who you think it is, or **SKIP**. Most votes gets **thrown out** (ragdoll-yeeted), and everyone sees if they were the poisoner. A tie, or most skipping, throws nobody out. |
 
 ### A round on a Discord call (6 friends: Ada, Baron, Clara, Dev, Eli, Finn; Finn is the poisoner)
@@ -57,13 +57,14 @@ the story messier. And if the poisoner had poured into Baron's cup, Baron would 
 word would be the only evidence.
 
 **Ghosts** (the dead and the thrown-out) keep playing for chaos: they rattle cups and throw ghost
-cakes. Among Us rules: **ghosts don't talk to the living** (mute yourself on Discord).
+cakes. House rule: **ghosts don't talk to the living** (mute yourself on Discord).
 
 **Clip moments.** Big banners for the funny beats: *CAUGHT THE POISONER!*, *WRONG GUEST!*,
 *DOUBLE KILL*, *ANTIDOTE SAVE*, *CAKE SAVE*, *OWN GOAL* (the poisoner drank their own poison
 after a swap), *SELF-SWAP*. The results screen gives out awards (Master Poisoner, Detective,
 Sharpshooter, Guardian Angel, Cake Magnet...) that pay extra coins. Rooms: **the Parlour**,
-**Garden Party** and **Royal Banquet** (8 seats).
+**Garden Party** and **Royal Banquet** (8 seats), all open to everyone. Tick **Night party** in the
+lobby for moonlight, candles on the table and fireflies in the garden.
 
 ## Playing online with Steam (Spacewar, App ID 480)
 
@@ -158,10 +159,11 @@ Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
 
 ## Progression
 
-Matches pay XP and coins. Levels unlock rooms, modes and **custom lobby rules** (level 6). The
-**Wardrobe** sells hats, faces, bean colours, teacups and death animations, and you can try any
-of them on the turntable (including a ragdoll preview of your death). **Titles** come from
-lifetime stats (*Poisoner*, *Nose of the Year*, *Poltergeist*, *The Butler Did It*...).
+Every room, the night mode and all lobby rules are open to everyone from the first match. Matches
+pay XP and coins; levels open up more items in the **Wardrobe** (hats, faces, outfit colours,
+teacups and death animations), which you can try on the turntable, including a ragdoll preview of
+your death. **Titles** come from lifetime stats (*Cold Blooded*, *Nose of the Year*, *Poltergeist*,
+*Mastermind*...).
 
 ## Project layout
 

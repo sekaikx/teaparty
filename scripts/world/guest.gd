@@ -23,8 +23,13 @@ const L_WORLD := 1
 const L_RAGDOLL := 16
 const L_PROPS := 32
 const L_HITBOX := 64
-const TONES := [Color("ffd9b8"), Color("f3c48f"), Color("e3a86c"), Color("c7834d"), Color("8f5a36"), Color("ffe6d2")]
-const HAIR := [Color("3b2416"), Color("1d1a1f"), Color("e8c16a"), Color("b8452a"), Color("7a4a2b"), Color("d9d9e0")]
+## Cartoon skin tones (saturated enough to read as skin under the warm lights, never mannequin-white).
+const TONES := [Color("f1b58a"), Color("e39a68"), Color("c98150"), Color("a8663c"), Color("7c4a2c"), Color("e8a97e"), Color("d99b74")]
+const HAIR := [Color("3b2416"), Color("1d1a1f"), Color("e8b84f"), Color("b8452a"), Color("7a4a2b"), Color("c9c9d4"), Color("5a3a7a")]
+## Per-guest variety, from the name: build (belly / head size), outfit and hairstyle.
+const BUILDS := [[1.0, 1.0], [1.14, 1.04], [0.9, 1.08], [1.06, 0.94]]
+const OUTFITS := [&"bowtie", &"waistcoat", &"dress", &"cardigan"]
+const HAIRSTYLES := [&"tuft", &"side_part", &"bun", &"curls", &"bald", &"long"]
 
 ## Faceplants send the table's cups flying (the table view listens for this).
 signal splashed_table(guest: Guest)
@@ -149,6 +154,8 @@ func _mat(c: Color, rough: float = 0.55) -> StandardMaterial3D:
 	m.rim_enabled = true
 	m.rim = 0.25
 	m.rim_tint = 0.4
+	# A bold ink outline (inverted hull), the comic look.
+	m.next_pass = Mats.outline()
 	return m
 
 
@@ -171,6 +178,11 @@ func _build_rig(ghost: bool) -> void:
 	var accent: Color = skin.get("accent", Color("ff8fab"))
 	var tone: Color = TONES[_hash() % TONES.size()]
 	var hair_col: Color = HAIR[(_hash() / 7) % HAIR.size()]
+	var build: Array = BUILDS[(_hash() / 13) % BUILDS.size()]
+	var belly: float = build[0]
+	var head_k: float = build[1]
+	var outfit: StringName = OUTFITS[(_hash() / 29) % OUTFITS.size()]
+	var hairstyle: StringName = HAIRSTYLES[(_hash() / 61) % HAIRSTYLES.size()]
 	var g := Mats.ghost()
 	_shirt = _mat(shirt_col)
 	_skin_mat = _mat(tone, 0.6)
@@ -186,7 +198,10 @@ func _build_rig(ghost: bool) -> void:
 	model = _rig
 	# Pelvis (shorts) and legs.
 	_hips = _pivot(_rig, Vector3(0, SEAT_Y, -SIT_BACK), "Hips")
-	_part(_hips, Vector3(0.5, 0.27, 0.33), pants, Vector3.ZERO, 0.4, Vector2(1.06, 1.0))
+	_part(_hips, Vector3(0.5 * belly, 0.27, 0.33), pants, Vector3.ZERO, 0.4, Vector2(1.06, 1.0))
+	if not ghost and outfit == &"dress":
+		# A flared skirt over the hips (the legs still move freely under it).
+		Mats.mesh(_hips, Mats.softbox(Vector3(0.62 * belly, 0.34, 0.46), 0.5, Vector2(0.72, 0.8), 0.04), _mat(shirt_col.darkened(0.15)), Vector3(0, -0.08, 0.01))
 	if not ghost:
 		_hip_l = _pivot(_hips, Vector3(0.13, -0.07, 0), "HipL")
 		_hip_r = _pivot(_hips, Vector3(-0.13, -0.07, 0), "HipR")
@@ -208,12 +223,9 @@ func _build_rig(ghost: bool) -> void:
 		Mats.mesh(_hips, Mats.cylinder(0.24, 0.02, 0.6, 16), g, Vector3(0, -0.4, -0.05))
 	# Torso: a barrel chest in the shirt colour, collar and a bow tie in the accent colour.
 	_waist = _pivot(_hips, Vector3(0, 0.1, 0), "Waist")
-	_part(_waist, Vector3(0.6, 0.58, 0.4), shirt, Vector3(0, 0.29, 0), 0.56, Vector2(1.08, 0.96), 0.13)
+	_part(_waist, Vector3(0.6 * belly, 0.58, 0.4 * belly), shirt, Vector3(0, 0.29, 0), 0.56, Vector2(1.08, 0.96), 0.13)
 	if not ghost:
-		_part(_waist, Vector3(0.5, 0.05, 0.34), _mat(accent.darkened(0.2)), Vector3(0, 0.03, 0), 0.5)
-		Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.07, 0.05), 0.5), _mat(accent), Vector3(0, 0.5, 0.2))
-		for side in [1.0, -1.0]:
-			Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.09, 0.04), 0.4, Vector2(0.5, 1.0)), _mat(accent), Vector3(0.07 * side, 0.5, 0.2), Vector3(0, 0, 90 * side))
+		_build_outfit(outfit, shirt_col, accent, belly)
 	# Arms.
 	_sh_l = _pivot(_waist, Vector3(0.36, 0.48, 0), "ShoulderL")
 	_sh_r = _pivot(_waist, Vector3(-0.36, 0.48, 0), "ShoulderR")
@@ -240,13 +252,14 @@ func _build_rig(ghost: bool) -> void:
 	face.position = Vector3(0, 0.27, 0)
 	_head.add_child(face)
 	_part(face, Vector3(0.6, 0.58, 0.54), skin_m, Vector3.ZERO, 0.62, Vector2(0.95, 0.95), 0.06)
+	face.scale = Vector3.ONE * head_k
 	if not ghost:
 		for side in [1.0, -1.0]:
 			_part(face, Vector3(0.07, 0.13, 0.09), skin_m, Vector3(0.3 * side, -0.01, -0.01), 0.6)
+			# Warm cheeks.
+			Mats.mesh(face, Mats.sphere(0.05), Mats.solid(tone.lerp(Color("ff6f8a"), 0.45), 0.8), Vector3(0.19 * side, -0.08, HEAD_R - 0.035), Vector3.ZERO, Vector3(1.3, 0.8, 0.3))
 		_part(face, Vector3(0.1, 0.1, 0.08), _mat(tone.darkened(0.12)), Vector3(0, -0.04, HEAD_R - 0.01), 0.7)
-		# A hair tuft on top / back (hats sit over it).
-		_part(face, Vector3(0.58, 0.14, 0.4), _mat(hair_col, 0.8), Vector3(0, 0.25, -0.08), 0.5, Vector2(0.8, 0.9))
-		_part(face, Vector3(0.14, 0.12, 0.12), _mat(hair_col, 0.8), Vector3(0.08, 0.32, 0.08), 0.6)
+		_build_hair(face, hairstyle, _mat(hair_col, 0.8), 1.0)
 	# Googly eyes.
 	_eyes.clear()
 	for side in [1.0, -1.0]:
@@ -292,6 +305,69 @@ func _build_rig(ghost: bool) -> void:
 	_pose.clear()
 	if is_local:
 		_apply_local_layers()
+
+
+## The outfit over the barrel chest: a bow tie, a waistcoat with buttons, a dress collar or a
+## striped cardigan. Always the colours from the wardrobe ("body" + "accent").
+func _build_outfit(outfit: StringName, shirt_col: Color, accent: Color, belly: float) -> void:
+	var acc := _mat(accent)
+	var dark := _mat(shirt_col.darkened(0.35))
+	var vest := _mat(accent.darkened(0.25).lerp(Color("3a2a4a"), 0.3))
+	match outfit:
+		&"waistcoat":
+			# The waistcoat: a darker wrap over the front and sides, open in a V at the top.
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.62 * belly, 0.44, 0.41 * belly), 0.52, Vector2(1.06, 0.97), 0.13), vest, Vector3(0, 0.24, 0.002))
+			for side in [1.0, -1.0]:
+				Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.2, 0.04), 0.4, Vector2(0.4, 1.0)), _shirt, Vector3(0.05 * side, 0.46, 0.2 * belly), Vector3(0, 0, 25 * side))
+			for i in 3:
+				Mats.mesh(_waist, Mats.sphere(0.022), Mats.gold(), Vector3(0.0, 0.16 + i * 0.1, 0.215 * belly))
+			# A pocket watch chain.
+			Mats.mesh(_waist, Mats.torus(0.05, 0.062, 12), Mats.gold(), Vector3(0.12 * belly, 0.2, 0.2 * belly), Vector3(80, 0, 20))
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.14, 0.06, 0.05), 0.5), acc, Vector3(0, 0.5, 0.2))
+		&"dress":
+			# A round collar and a ribbon.
+			Mats.mesh(_waist, Mats.torus(0.12, 0.17, 18), _mat(Color("fff6e6")), Vector3(0, 0.56, 0.02), Vector3(8, 0, 0))
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.52 * belly, 0.06, 0.36 * belly), 0.5), acc, Vector3(0, 0.05, 0))
+			Mats.mesh(_waist, Mats.sphere(0.045), acc, Vector3(0, 0.07, 0.2 * belly))
+		&"cardigan":
+			# Three bands around the belly (sized past its curve so they show) and a button strip.
+			for i in 3:
+				var y := 0.14 + i * 0.13
+				var bulge := 1.0 + 0.13 * (1.0 - pow((y - 0.29) / 0.29, 2.0))
+				Mats.mesh(_waist, Mats.softbox(Vector3(0.63 * belly * bulge, 0.05, 0.43 * belly * bulge), 0.5, Vector2(1.03, 1.0)), acc, Vector3(0, y, 0))
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.06, 0.5, 0.05), 0.5), dark, Vector3(0, 0.27, 0.225 * belly))
+			for i in 3:
+				Mats.mesh(_waist, Mats.sphere(0.022), _mat(Color("fff6e6")), Vector3(0, 0.15 + i * 0.12, 0.25 * belly))
+		_:
+			# The classic: belt and a bow tie.
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.5 * belly, 0.05, 0.34 * belly), 0.5), _mat(accent.darkened(0.2)), Vector3(0, 0.03, 0))
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.07, 0.05), 0.5), acc, Vector3(0, 0.5, 0.2))
+			for side in [1.0, -1.0]:
+				Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.09, 0.04), 0.4, Vector2(0.5, 1.0)), acc, Vector3(0.07 * side, 0.5, 0.2), Vector3(0, 0, 90 * side))
+
+
+## Hairstyles (hats sit over the top; the back and sides still show).
+func _build_hair(face: Node3D, style: StringName, hair: Material, k: float) -> void:
+	match style:
+		&"side_part":
+			_part(face, Vector3(0.62 * k, 0.14, 0.52 * k), hair, Vector3(0.02, 0.26 * k, -0.02), 0.45, Vector2(0.85, 0.9))
+			_part(face, Vector3(0.22, 0.12, 0.3), hair, Vector3(0.2 * k, 0.24 * k, 0.12), 0.6)
+		&"bun":
+			_part(face, Vector3(0.6 * k, 0.12, 0.5 * k), hair, Vector3(0, 0.26 * k, -0.04), 0.5, Vector2(0.8, 0.85))
+			Mats.mesh(face, Mats.sphere(0.12), hair, Vector3(0, 0.28 * k, -0.24 * k))
+		&"curls":
+			for i in 7:
+				var a := TAU * i / 7.0
+				Mats.mesh(face, Mats.sphere(0.1), hair, Vector3(cos(a) * 0.2 * k, 0.27 * k + sin(a * 2.0) * 0.02, sin(a) * 0.16 * k - 0.04))
+		&"bald":
+			for side in [1.0, -1.0]:
+				_part(face, Vector3(0.08, 0.16, 0.2), hair, Vector3(0.29 * k * side, 0.02, -0.08), 0.6)
+		&"long":
+			_part(face, Vector3(0.62 * k, 0.14, 0.52 * k), hair, Vector3(0, 0.26 * k, -0.04), 0.45, Vector2(0.85, 0.9))
+			_part(face, Vector3(0.6 * k, 0.5, 0.14), hair, Vector3(0, -0.02, -0.25 * k), 0.5, Vector2(1.0, 0.9))
+		_:
+			_part(face, Vector3(0.58 * k, 0.14, 0.4 * k), hair, Vector3(0, 0.25 * k, -0.08), 0.5, Vector2(0.8, 0.9))
+			_part(face, Vector3(0.14, 0.12, 0.12), hair, Vector3(0.08, 0.32 * k, 0.08), 0.6)
 
 
 func _set_shadows(n: Node, on: bool) -> void:

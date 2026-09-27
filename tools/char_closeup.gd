@@ -2,8 +2,13 @@ extends Node
 ## Studio renders of the guest rig: front / side / back, standing, a knockdown, the recovery.
 ##   xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/char_closeup.gd
 var out := "/tmp/claude-0/closeup"
+const NAMES := ["Lady Crumpet", "Sir Scone", "Vicar Treacle", "Duchess Earl", "Baron Jam", "Miss Bergamot", "Auntie Oolong", "Colonel Scone", "Countess Chai"]
+var offset := 0
 func _ready() -> void:
 	Profile.ephemeral = true
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--offset="):
+			offset = int(a.get_slice("=", 1))
 	DirAccess.make_dir_recursive_absolute(out)
 	for c in get_parent().get_children():
 		if c is CanvasLayer:
@@ -47,7 +52,9 @@ func _run() -> void:
 		var g := Guest.new()
 		w.add_child(g)
 		g.position = Vector3((i - 1) * 1.3, 0, 0)
-		g.setup(i, {"id": 0, "name": ["Lady Crumpet", "Sir Scone", "Vicar Treacle"][i], "cos": looks[i]})
+		if i == 1:
+			g.name = "second"
+		g.setup(i, {"id": 0, "name": NAMES[i + offset], "cos": looks[i]})
 		g.stand()
 		gs.append(g)
 	var cam := Camera3D.new()

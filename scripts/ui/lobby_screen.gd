@@ -169,7 +169,7 @@ func _refresh_rules() -> void:
 	var room_names: Array = []
 	for id: StringName in rooms:
 		var e: Dictionary = Defs.ROOMS[id]
-		room_names.append("%s (%d seats)%s" % [e["name"], e["seats"], "" if Profile.is_unlocked_room(id) or not host else "  - LOCKED, level %d" % e["level"]])
+		room_names.append("%s (%d seats)%s" % [e["name"], e["seats"], ""])
 	_rules.add_child(_row("Room", _pick(room_names, rooms.find(StringName(r["room"])), host, func(i: int) -> void:
 		if Profile.is_unlocked_room(rooms[i]):
 			Net.set_rule("room", rooms[i])
@@ -180,7 +180,7 @@ func _refresh_rules() -> void:
 	var mode_names: Array = []
 	for id: StringName in modes:
 		var e: Dictionary = Defs.MODES[id]
-		mode_names.append("%s%s" % [e["name"], "" if Profile.is_unlocked_mode(id) or not host else "  - LOCKED, level %d" % e["level"]])
+		mode_names.append("%s%s" % [e["name"], ""])
 	_rules.add_child(_row("Mode", _pick(mode_names, modes.find(StringName(r["mode"])), host, func(i: int) -> void:
 		if Profile.is_unlocked_mode(modes[i]):
 			Net.set_rule("mode", modes[i])
@@ -188,6 +188,7 @@ func _refresh_rules() -> void:
 			_refresh_rules())))
 	_rules.add_child(Ui.wrap(Ui.label(String(Defs.MODES[StringName(r["mode"])]["desc"]), 14, Ui.MUTED), 420))
 	_rules.add_child(_num("Max guests", "max_players", 3, 8, 1, host))
+	_rules.add_child(_flag("Night party (moonlight and candles)", "night", host))
 	_rules.add_child(_flag("Helium voices (squeaky voice chat)", "helium", host))
 	var custom := host and Profile.custom_rules_unlocked()
 	_rules.add_child(Ui.title("CUSTOM RULES", 22, Ui.SKY))

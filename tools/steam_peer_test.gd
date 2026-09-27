@@ -35,6 +35,19 @@ class BusSteam:
 		return (bus[id] as Array).pop_front()
 
 
+## Like the real log from two Windows PCs: Networking Messages "succeeds" (returns OK) but
+## never delivers anything (the session times out, 5003); the P2P api works.
+class HalfSteam:
+	extends BusSteam
+	signal network_messages_session_request(remote_id: int)
+	func sendMessageToUser(_to: int, _data: PackedByteArray, _flags: int, _channel: int) -> int:
+		return 1
+	func receiveMessagesOnChannel(_channel: int, _max_messages: int) -> Array:
+		return []
+	func acceptSessionWithUser(_other: int) -> bool:
+		return true
+
+
 ## The same bus, but speaking only Valve's Networking Messages API, with the sender reported as an
 ## identity string ("steamid:...") like some GodotSteam versions do.
 class MsgSteam:
@@ -108,6 +121,8 @@ func _ready() -> void:
 	await get_tree().process_frame
 	print("STEAMPEER --- p2p api")
 	await _run(BusSteam.new(76561198000000001), BusSteam.new(76561198000000002), BusSteam.new(76561198000000003), "p2p")
+	print("STEAMPEER --- messages api silently broken, p2p works (the real-world case)")
+	await _run(HalfSteam.new(76561198000000021), HalfSteam.new(76561198000000022), HalfSteam.new(76561198000000023), "half")
 	print("STEAMPEER --- networking messages api")
 	await _run(MsgSteam.new(76561198000000011), MsgSteam.new(76561198000000012), MsgSteam.new(76561198000000013), "msg")
 	print("STEAMPEER DONE fails=%d" % fails)
