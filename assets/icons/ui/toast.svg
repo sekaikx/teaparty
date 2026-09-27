@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <g stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round">
-    <g transform="rotate(-18 80 150)"><path d="M34 110h92l-10 70c-2 10-10 16-20 16H64c-10 0-18-6-20-16z" fill="#fff6e6"/><path d="M126 124c20 0 20 30 0 32" fill="none" stroke-width="9"/></g>
-    <g transform="rotate(18 176 150)"><path d="M130 110h92l-10 70c-2 10-10 16-20 16h-32c-10 0-18-6-20-16z" fill="#fff6e6"/><path d="M130 124c-20 0-20 30 0 32" fill="none" stroke-width="9"/></g>
-  </g>
-  <path d="M60 104l50-16M146 88l50 16" stroke="#ff5c8a" stroke-width="10" stroke-linecap="round"/>
-  <g fill="#ffc93c" stroke="#1d1128" stroke-width="6" stroke-linejoin="round"><path d="M128 20l8 20 20 8-20 8-8 20-8-20-20-8 20-8z"/></g>
-  <path d="M84 60l-12-14M172 60l12-14" stroke="#1d1128" stroke-width="9" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6bb59"/>
+      <stop offset="1" stop-color="#c3811c"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="134" r="112" fill="#1d1128" opacity="0.35"/>
+  <circle cx="128" cy="126" r="112" fill="url(#g)" stroke="#1d1128" stroke-width="11"/>
+  <path d="M52 104 A80 80 0 0 1 204 104 A96 70 0 0 0 52 104 Z" fill="#ffffff" opacity="0.28"/>
+  <g transform="translate(56.32 63.32) scale(0.5600)" fill="#1d1128" color="#1d1128" opacity="0.35"><path d="M149.91,13.53A8,8,0,0,0,142.3,8H97.71a8,8,0,0,0-7.61,5.53,451,451,0,0,0-14.21,59.7c-7.26,44.25-4.35,75.76,8.65,93.66A40,40,0,0,0,112,183.42V232H96a8,8,0,1,0,0,16h48a8,8,0,0,0,0-16H128V183.42a39.94,39.94,0,0,0,27.46-16.53c13-17.9,15.92-49.41,8.66-93.66A451,451,0,0,0,149.91,13.53ZM93.8,64c3-15.58,6.73-29.81,9.79-40h32.83c3.06,10.19,6.77,24.42,9.8,40ZM232,52a12,12,0,1,1-12-12A12,12,0,0,1,232,52ZM184,20a12,12,0,1,1,12,12A12,12,0,0,1,184,20Zm24,80a12,12,0,1,1-12-12A12,12,0,0,1,208,100Z"/></g>
+  <g transform="translate(56.32 56.32) scale(0.5600)" fill="#ffffff" color="#ffffff"><path d="M149.91,13.53A8,8,0,0,0,142.3,8H97.71a8,8,0,0,0-7.61,5.53,451,451,0,0,0-14.21,59.7c-7.26,44.25-4.35,75.76,8.65,93.66A40,40,0,0,0,112,183.42V232H96a8,8,0,1,0,0,16h48a8,8,0,0,0,0-16H128V183.42a39.94,39.94,0,0,0,27.46-16.53c13-17.9,15.92-49.41,8.66-93.66A451,451,0,0,0,149.91,13.53ZM93.8,64c3-15.58,6.73-29.81,9.79-40h32.83c3.06,10.19,6.77,24.42,9.8,40ZM232,52a12,12,0,1,1-12-12A12,12,0,0,1,232,52ZM184,20a12,12,0,1,1,12,12A12,12,0,0,1,184,20Zm24,80a12,12,0,1,1-12-12A12,12,0,0,1,208,100Z"/></g>
 </svg>

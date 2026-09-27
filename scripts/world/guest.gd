@@ -1,24 +1,27 @@
 class_name Guest
 extends Node3D
-## A tea party guest: a chunky, pillowy little person, big square-ish head with googly eyes,
-## ears, nose and a hair tuft; a barrel torso in their shirt colour; stubby shorts; upper arms,
-## forearms and white mitten hands; thighs, shins and big boots. Every part is a "soft box"
-## (Mats.softbox), so the silhouette reads as a person, not a capsule, and it tumbles like a
-## sack of cushions.
+## A tea party guest: a jelly bean. One smooth sculpted vinyl body (bean_mesh) whose domed top is
+## the head, big glossy eyes with sloshing pupils, blushing cheeks, noodle arms with round mitts,
+## stubby legs and little shoes, plus a collar accessory, a hair nub and the wardrobe hat.
 ##
 ## Poses are procedural (shoulders / elbows / hips / knees / neck blended every frame from a
 ## state + a gesture). Physics is part of the act:
-##   knockdown()  a cake to the face topples you: 11 rigid bodies on cone-twist joints flop out
-##                of the chair, then you snap back into your seat (with a boing).
+##   knockdown()  a cake to the face topples you: the bean becomes one rolling rigid body with
+##                floppy limbs, then you snap back into your seat (with a boing).
 ##   die()        poisoned: turn green, shake, then ragdoll for good; the body stays on the floor.
 ##   become_ghost()  a translucent version floats up above the chair.
 
 const SIT_BACK := 0.30          # the seated body sits this far behind the root (the chair goes there)
 const LOCAL_LAYER := 1 << 19    # parts your own first-person camera leaves out
 const SEAT_Y := 0.64            # pelvis height when seated
-const UPPER_K := 0.84           # the body, arms and head (everything on the waist) are scaled by this
 const STAND_Y := 0.54           # pelvis height when standing (short bean legs)
-const HEAD_R := 0.32            # half-size of the head (face features sit on +Z at this depth)
+## The bean's side profile, (height, radius) pairs in waist space from the seat up. Above NECK_Y
+## it is a dome of radius BEAN_R centred on the neck (the head), flattened FLAT front to back.
+const BEAN_PROFILE := [Vector2(-0.2, 0.0), Vector2(-0.188, 0.12), Vector2(-0.15, 0.21), Vector2(-0.08, 0.28),
+	Vector2(0.02, 0.318), Vector2(0.14, 0.332), Vector2(0.28, 0.326), Vector2(0.42, 0.312)]
+const NECK_Y := 0.54
+const BEAN_R := 0.305
+const FLAT := 0.9
 ## Physics layers: 1 world, 16 ragdolls, 32 flying props, 64 living guests' hitboxes.
 const L_WORLD := 1
 const L_RAGDOLL := 16
@@ -64,11 +67,15 @@ var _hip_r: Node3D
 var _kn_l: Node3D
 var _kn_r: Node3D
 var _mouth: MeshInstance3D
+## The closed mouth: a little curved line (flipped for a frown); _mouth is the open one.
+var _smile: MeshInstance3D
+var _eye_mat: StandardMaterial3D
 var _brows: Array[MeshInstance3D] = []
 var _eyes: Array[Dictionary] = []
 ## The big jelly shapes (bottom, belly, head) that squash and stretch.
 var _jelly_parts: Array[MeshInstance3D] = []
 var _wobble := 0.0
+var _belly := 1.0
 var _shirt: StandardMaterial3D
 var _skin_mat: StandardMaterial3D
 var _hat: Node3D
@@ -110,6 +117,10 @@ var _ragdoll_parts: Array[RigidBody3D] = []
 var _joints: Array[Joint3D] = []
 var _detached: Array[Dictionary] = []
 var _ragdolling := false
+var _flop_t := 0.0
+var _flop_limbs: Array = []
+var _pass_through: Array[PhysicsBody3D] = []
+var _pass_check := 0.0
 var _recovering := false
 var _recover_tw: Tween
 var _corpse_head: Node3D
@@ -151,18 +162,6 @@ func _hash() -> int:
 	return absi(hash(display_name))
 
 
-func _mat(c: Color, rough: float = 0.55) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = c
-	m.roughness = rough
-	m.rim_enabled = true
-	m.rim = 0.25
-	m.rim_tint = 0.4
-	# A bold ink outline (inverted hull), the comic look.
-	m.next_pass = Mats.outline()
-	return m
-
-
 ## One chunky part: a soft box centred at `pos` under `parent`.
 func _part(parent: Node3D, size: Vector3, mat: Material, pos: Vector3, round_amt: float = 0.45, taper: Vector2 = Vector2.ONE, bulge: float = 0.0) -> MeshInstance3D:
 	return Mats.mesh(parent, Mats.softbox(size, round_amt, taper, bulge), mat, pos)
@@ -183,104 +182,112 @@ func _build_rig(ghost: bool) -> void:
 	var hair_col: Color = HAIR[(_hash() / 7) % HAIR.size()]
 	var build: Array = BUILDS[(_hash() / 13) % BUILDS.size()]
 	var belly: float = build[0]
-	var head_k: float = build[1]
+	var eye_k: float = build[1]
+	_belly = belly
 	var outfit: StringName = OUTFITS[(_hash() / 29) % OUTFITS.size()]
 	var hairstyle: StringName = HAIRSTYLES[(_hash() / 61) % HAIRSTYLES.size()]
 	var g := Mats.ghost()
-	# Jelly: one glossy colour for the whole bean, a lighter belly, white mitts, dark shoes.
-	_shirt = _jelly(body_col)
+	_shirt = _vinyl(body_col, true)
 	_skin_mat = _shirt
-	var jelly: Material = g if ghost else _shirt
-	var glove: Material = g if ghost else _jelly(Color("fbfaf4"), 0.3)
-	var shoe: Material = g if ghost else _mat(body_col.darkened(0.6).lerp(Color("2d2233"), 0.5), 0.5)
-	var ink := Mats.solid(Color("1d1128"), 0.4)
+	var skin_m: Material = g if ghost else _shirt
+	var limb: Material = skin_m
+	var glove: Material = g if ghost else _vinyl(Color("fbf8f2"), false)
+	var shoe: Material = g if ghost else _vinyl(body_col.darkened(0.55).lerp(Color("2d2233"), 0.55), false, 0.5)
+	var ink := Mats.solid(Color("1d1128"), 0.35)
 	_rig = Node3D.new()
 	_rig.name = "Rig"
 	add_child(_rig)
 	model = _rig
 	_jelly_parts.clear()
-	# The bottom of the bean, and two stubby legs.
+	# The seat of the bean, and two stubby noodle legs.
 	_hips = _pivot(_rig, Vector3(0, SEAT_Y, -SIT_BACK), "Hips")
-	# (The bean's body lives on the waist below, so bending at the hips reads as the bean folding.)
+	_hip_l = null
+	_hip_r = null
+	_kn_l = null
+	_kn_r = null
 	if not ghost:
-		_hip_l = _pivot(_hips, Vector3(0.15, -0.08, 0.02), "HipL")
-		_hip_r = _pivot(_hips, Vector3(-0.15, -0.08, 0.02), "HipR")
+		_hip_l = _pivot(_hips, Vector3(0.13 * belly, -0.1, 0.03), "HipL")
+		_hip_r = _pivot(_hips, Vector3(-0.13 * belly, -0.1, 0.03), "HipR")
 		for hp: Node3D in [_hip_l, _hip_r]:
-			_part(hp, Vector3(0.21, 0.32, 0.21), jelly, Vector3(0, -0.1, 0), 0.95)
-			var kn := _pivot(hp, Vector3(0, -0.2, 0), "Knee")
-			_part(kn, Vector3(0.2, 0.3, 0.2), jelly, Vector3(0, -0.07, 0), 0.95)
-			var an := _pivot(kn, Vector3(0, -0.19, 0), "Ankle")
-			_part(an, Vector3(0.22, 0.14, 0.3), shoe, Vector3(0, -0.02, 0.06), 0.75, Vector2(0.95, 0.9))
+			_limb(hp, 0.095, 0.3, -0.09, limb)
+			var kn := _pivot(hp, Vector3(0, -0.19, 0), "Knee")
+			_limb(kn, 0.09, 0.28, -0.08, limb)
+			var an := _pivot(kn, Vector3(0, -0.18, 0), "Ankle")
+			_part(an, Vector3(0.21, 0.14, 0.3), shoe, Vector3(0, -0.03, 0.06), 0.8, Vector2(0.95, 0.85))
 			if hp == _hip_l:
 				_kn_l = kn
 			else:
 				_kn_r = kn
-	else:
-		_hip_l = null
-		_hip_r = null
-		_kn_l = null
-		_kn_r = null
-		Mats.mesh(_hips, Mats.cylinder(0.3, 0.02, 0.6, 16), g, Vector3(0, -0.36, -0.05))
-	# The middle of the bean: a round belly with a lighter patch.
+	# The bean itself: one smooth sculpted body from the seat to the top of the head.
 	_waist = _pivot(_hips, Vector3(0, 0.1, 0), "Waist")
-	# The whole bean above the hips is drawn a bit small so the table stays readable.
-	_waist.scale = Vector3.ONE * UPPER_K
-	# One tall bean from the seat up into the head (the head's dome covers its top), so the
-	# silhouette is a single smooth jelly bean with no waist.
-	_jelly_parts.append(_part(_waist, Vector3(0.78 * belly, 1.02, 0.68 * belly), jelly, Vector3(0, 0.26, 0), 0.94, Vector2(0.9, 0.92), 0.04))
+	var body := Mats.mesh(_waist, bean_mesh(belly), skin_m)
+	body.name = "Bean"
+	_jelly_parts.append(body)
 	if not ghost:
-		var patch := Mats.mesh(_waist, Mats.sphere(0.22, 0.4, 18), _jelly(body_col.lerp(Color.WHITE, 0.22), 0.3), Vector3(0, 0.14, 0.29 * belly), Vector3.ZERO, Vector3(1.05 * belly, 0.95, 0.3))
-		patch.name = "Belly"
 		_build_outfit(outfit, body_col, accent, belly)
-	# Short noodle arms with round mitts.
-	_sh_l = _pivot(_waist, Vector3(0.37 * belly, 0.4, 0), "ShoulderL")
-	_sh_r = _pivot(_waist, Vector3(-0.37 * belly, 0.4, 0), "ShoulderR")
+	# Noodle arms with round mitts, coming out of the sides.
+	_sh_l = _pivot(_waist, Vector3(0.29 * belly, 0.3, 0), "ShoulderL")
+	_sh_r = _pivot(_waist, Vector3(-0.29 * belly, 0.3, 0), "ShoulderR")
 	for sh: Node3D in [_sh_l, _sh_r]:
-		_part(sh, Vector3(0.16, 0.28, 0.16), jelly, Vector3(0, -0.08, 0), 0.97)
-		var el := _pivot(sh, Vector3(0, -0.17, 0), "Elbow")
-		_part(el, Vector3(0.15, 0.26, 0.15), jelly, Vector3(0, -0.07, 0), 0.97)
+		var el := _pivot(sh, Vector3(0, -0.18, 0), "Elbow")
 		var hand := _pivot(el, Vector3(0, -0.18, 0), "Hand")
-		_part(hand, Vector3(0.2, 0.2, 0.17), glove, Vector3(0, -0.06, 0.01), 0.95)
-		var side := 1.0 if sh == _sh_l else -1.0
-		_part(hand, Vector3(0.08, 0.1, 0.08), glove, Vector3(-0.09 * side, -0.01, 0.05), 0.95)
+		# (A ghost is just the glowing bean: overlapping translucent limbs look like a mess.)
+		if not ghost:
+			_limb(sh, 0.07, 0.27, -0.09, limb)
+			_limb(el, 0.066, 0.25, -0.08, limb)
+			Mats.mesh(hand, Mats.sphere(0.088, 0.17, 18), glove, Vector3(0, -0.05, 0.01), Vector3.ZERO, Vector3(1.0, 1.0, 0.85))
+			var side := 1.0 if sh == _sh_l else -1.0
+			Mats.mesh(hand, Mats.sphere(0.04), glove, Vector3(-0.07 * side, -0.0, 0.05))
 		if sh == _sh_l:
 			_el_l = el
 		else:
 			_el_r = el
 			_hand_r = hand
-	# The top of the bean is the head (no neck): it just folds forward and back.
-	_neck = _pivot(_waist, Vector3(0, 0.5, 0), "Neck")
-	_head = _pivot(_neck, Vector3(0, 0.04, 0), "Head")
+	# The top of the bean is the head: a dome centred on the neck, so turning and nodding just
+	# slides the face over the surface.
+	_neck = _pivot(_waist, Vector3(0, NECK_Y, 0), "Neck")
+	_head = _pivot(_neck, Vector3.ZERO, "Head")
 	head_anchor = _head
 	var face := Node3D.new()
 	face.name = "Face"
-	face.position = Vector3(0, 0.22, 0)
 	_head.add_child(face)
-	_jelly_parts.append(_part(face, Vector3(0.72, 0.66, 0.64), jelly, Vector3.ZERO, 0.94, Vector2(0.9, 0.9)))
-	face.scale = Vector3.ONE * head_k
 	if not ghost:
+		var blush := Mats.solid(body_col.lerp(Color("ff5f86"), 0.5), 0.9)
 		for side in [1.0, -1.0]:
-			Mats.mesh(face, Mats.sphere(0.06), Mats.solid(body_col.lerp(Color("ff6f8a"), 0.55), 0.8), Vector3(0.21 * side, -0.07, HEAD_R - 0.03), Vector3.ZERO, Vector3(1.3, 0.8, 0.3))
-		_build_hair(face, hairstyle, _jelly(hair_col, 0.4), 1.0)
-	# Big googly eyes.
+			Mats.mesh(_on_face(face, 0.185 * side, -0.035, -0.012), Mats.sphere(0.05, 0.1, 16), blush, Vector3.ZERO, Vector3.ZERO, Vector3(1.35, 0.8, 0.25))
+		_build_hair(face, hairstyle, _vinyl(hair_col, false, 0.45), 1.0)
+	# Big glossy eyes: a white, a black pupil that sloshes about, and a glint.
 	_eyes.clear()
+	_eye_mat = StandardMaterial3D.new()
+	_eye_mat.albedo_color = Color("fffdf8")
+	_eye_mat.roughness = 0.2
+	_eye_mat.emission = Color("fff1c4")
+	var white: Material = _eye_mat
+	var glint := Mats.glow(Color.WHITE, 1.2)
 	for side in [1.0, -1.0]:
-		var eye := Node3D.new()
-		eye.position = Vector3(0.13 * side, 0.07, HEAD_R - 0.03)
-		face.add_child(eye)
-		Mats.mesh(eye, Mats.sphere(0.115, 0.23, 18), Mats.solid(Color.WHITE, 0.15), Vector3.ZERO, Vector3.ZERO, Vector3(1, 1.08, 0.55))
-		var pupil := Mats.mesh(eye, Mats.sphere(0.058, 0.116, 12), ink, Vector3(0, 0, 0.05), Vector3.ZERO, Vector3(1, 1, 0.5))
+		var eye := _on_face(face, 0.1 * side, 0.055, -0.03)
+		eye.scale = Vector3.ONE * eye_k
+		Mats.mesh(eye, Mats.sphere(0.078, 0.156, 20), white, Vector3.ZERO, Vector3.ZERO, Vector3(1, 1.18, 0.62))
+		var pupil := Node3D.new()
+		eye.add_child(pupil)
+		Mats.mesh(pupil, Mats.sphere(0.05, 0.1, 16), ink, Vector3.ZERO, Vector3.ZERO, Vector3(1, 1.12, 0.5))
+		Mats.mesh(pupil, Mats.sphere(0.015, 0.03, 8), glint, Vector3(0.018, 0.024, 0.024))
 		_eyes.append({"node": pupil, "off": Vector2(randf_range(-0.3, 0.3), -0.3), "vel": Vector2.ZERO})
 	_brows.clear()
 	for side in [1.0, -1.0]:
-		_brows.append(Mats.mesh(face, Mats.softbox(Vector3(0.13, 0.035, 0.03), 0.5), ink if not ghost else g, Vector3(0.13 * side, 0.21, HEAD_R - 0.01)))
-	_mouth = Mats.mesh(face, Mats.sphere(0.06, 0.12, 12), Mats.solid(Color("3b0d1e"), 0.5), Vector3(0, -0.13, HEAD_R - 0.02), Vector3.ZERO, Vector3(1.9, 0.45, 0.4))
+		var bp := _on_face(face, 0.1 * side, 0.155, 0.0)
+		var brow := Mats.mesh(bp, Mats.softbox(Vector3(0.11, 0.028, 0.03), 0.6), ink if not ghost else g)
+		_brows.append(brow)
+	var mp := _on_face(face, 0.0, -0.075, -0.008)
+	var lip := Mats.solid(Color("3b0d1e"), 0.5)
+	_mouth = Mats.mesh(mp, Mats.sphere(0.05, 0.1, 14), lip, Vector3.ZERO, Vector3.ZERO, Vector3(1.9, 0.45, 0.4))
+	_smile = Mats.mesh(mp, smile_mesh(), lip, Vector3(0, 0.012, 0.01))
 	if not ghost:
 		_build_face(face, StringName(str(look.get("face", &"none"))))
 	var hat := Hats.build(StringName(str(look.get("hat", &"none"))))
 	if hat:
-		hat.scale = Vector3.ONE * 0.6
-		hat.position = Vector3(0, 0.28, -0.02)
+		hat.scale = Vector3.ONE * 0.52 * belly
+		hat.position = Vector3(0, BEAN_R - 0.035, -0.01)
 		face.add_child(hat)
 		if ghost:
 			_ghostify(hat)
@@ -292,7 +299,7 @@ func _build_rig(ghost: bool) -> void:
 		_hitbox.set_meta(&"guest", self)
 		var hs := CollisionShape3D.new()
 		var sph := SphereShape3D.new()
-		sph.radius = 0.36
+		sph.radius = 0.31
 		hs.shape = sph
 		_hitbox.add_child(hs)
 		face.add_child(_hitbox)
@@ -300,7 +307,7 @@ func _build_rig(ghost: bool) -> void:
 		_body_box.collision_layer = L_HITBOX
 		_body_box.collision_mask = 0
 		_body_box.set_meta(&"guest", self)
-		RoomBuilder._box_shape(_body_box, Vector3(0.72, 0.6, 0.6), Vector3(0, 0.25, 0))
+		RoomBuilder._box_shape(_body_box, Vector3(0.62 * belly, 0.5, 0.56), Vector3(0, 0.1, 0))
 		_waist.add_child(_body_box)
 	if ghost:
 		_set_shadows(_rig, false)
@@ -309,68 +316,232 @@ func _build_rig(ghost: bool) -> void:
 		_apply_local_layers()
 
 
-## Glossy jelly: shiny with a strong rim light (no ink outline: jelly is smooth).
-func _jelly(c: Color, rough: float = 0.22) -> StandardMaterial3D:
-	var m := _mat(c, rough)
-	m.next_pass = null
-	m.rim = 0.45
-	m.rim_tint = 0.6
+## Soft vinyl-toy skin: satin, a gentle rim light, a touch of subsurface glow. The body uses the
+## bean mesh's vertex colours (a soft shade towards the bottom).
+func _vinyl(c: Color, shaded: bool, rough: float = 0.4) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.roughness = rough
+	m.vertex_color_use_as_albedo = shaded
+	m.rim_enabled = true
+	m.rim = 0.35
+	m.rim_tint = 0.55
 	m.clearcoat_enabled = true
-	m.clearcoat = 0.5
-	m.clearcoat_roughness = 0.2
+	m.clearcoat = 0.3
+	m.clearcoat_roughness = 0.35
+	m.subsurf_scatter_enabled = true
+	m.subsurf_scatter_strength = 0.2
 	return m
 
 
-## Bean accessories at the "neck" line, in the wardrobe accent colour: a bow tie, a ruffled
-## collar, a scarf, or an apron.
+## A noodle limb segment: a capsule hanging down from its pivot (same radius as its neighbour,
+## so arms and legs read as one smooth tube).
+func _limb(parent: Node3D, radius: float, length: float, centre_y: float, mat: Material) -> MeshInstance3D:
+	var c := CapsuleMesh.new()
+	c.radius = radius
+	c.height = length
+	c.radial_segments = 16
+	c.rings = 6
+	return Mats.mesh(parent, c, mat, Vector3(0, centre_y, 0))
+
+
+## Where the head dome's surface is at (x, y) (head space, +Z = the face), with `lift` pushing
+## the point out along the normal. Returns a pivot there whose +Z is the surface normal.
+func _on_face(face: Node3D, x: float, y: float, lift: float = 0.0) -> Node3D:
+	var n := _face_normal(x, y)
+	var p := _face_point(x, y) + n * lift
+	var pv := Node3D.new()
+	face.add_child(pv)
+	pv.position = p
+	var up := Vector3.UP - n * n.y
+	pv.basis = Basis(up.cross(n).normalized(), up.normalized(), n) if up.length() > 0.01 else Basis()
+	return pv
+
+
+func _face_point(x: float, y: float) -> Vector3:
+	# The body's own cross-section at this height (the dome above the neck, the plump middle below).
+	var rr := bean_radius(NECK_Y + y) * _belly
+	return Vector3(x, y, sqrt(maxf(rr * rr - x * x, 0.0)) * FLAT)
+
+
+func _face_normal(x: float, y: float) -> Vector3:
+	var e := 0.01
+	var dx := _face_point(x + e, y) - _face_point(x - e, y)
+	var dy := _face_point(x, y + e) - _face_point(x, y - e)
+	var n := dx.cross(dy).normalized()
+	return n if n.z > 0.0 else -n
+
+
+static var _smile_mesh: ArrayMesh
+
+
+## A small curved tube, the closed-mouth smile.
+static func smile_mesh() -> ArrayMesh:
+	if _smile_mesh:
+		return _smile_mesh
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var steps := 12
+	var sides := 8
+	var r := 0.07
+	var tube := 0.011
+	var rows: Array[PackedVector3Array] = []
+	for i in steps + 1:
+		var a := lerpf(-PI * 0.78, -PI * 0.22, float(i) / steps)
+		var c := Vector3(cos(a) * r, sin(a) * r + r * 0.6, 0)
+		var out := Vector3(cos(a), sin(a), 0)
+		var row := PackedVector3Array()
+		for k in sides + 1:
+			var b := TAU * k / sides
+			row.append(c + (out * cos(b) + Vector3(0, 0, 1) * sin(b)) * tube)
+		rows.append(row)
+	for i in steps:
+		for k in sides:
+			st.add_vertex(rows[i][k])
+			st.add_vertex(rows[i + 1][k + 1])
+			st.add_vertex(rows[i + 1][k])
+			st.add_vertex(rows[i][k])
+			st.add_vertex(rows[i][k + 1])
+			st.add_vertex(rows[i + 1][k + 1])
+	st.index()
+	st.generate_normals()
+	_smile_mesh = st.commit()
+	return _smile_mesh
+
+
+static var _beans: Dictionary = {}
+
+
+## The bean body: a lathe of BEAN_PROFILE (a rounded seat, a plump middle) topped by a dome of
+## BEAN_R around the neck, flattened a little front to back. Vertex colours shade the bottom.
+static func bean_mesh(belly: float) -> ArrayMesh:
+	var key := snappedf(belly, 0.01)
+	if _beans.has(key):
+		return _beans[key]
+	var prof: Array[Vector2] = []   # (radius, height)
+	var pts: Array = BEAN_PROFILE.duplicate()
+	pts.append(Vector2(NECK_Y, BEAN_R))
+	var n := pts.size()
+	for i in n - 1:
+		var p1: Vector2 = pts[i]
+		var p2: Vector2 = pts[i + 1]
+		var p0: Vector2 = pts[i - 1] if i > 0 else p1 * 2.0 - p2
+		var p3: Vector2 = pts[i + 2] if i + 2 < n else p2 + Vector2(0.12, 0.0)
+		for k in 5:
+			var q := p1.cubic_interpolate(p2, p0, p3, k / 5.0)
+			prof.append(Vector2(maxf(q.y, 0.0), q.x))
+	for k in 15:
+		var a := PI * 0.5 * k / 14.0
+		prof.append(Vector2(BEAN_R * cos(a), NECK_Y + BEAN_R * sin(a)))
+	prof[0].x = 0.0
+	var segs := 40
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	var cols := PackedColorArray()
+	var uvs := PackedVector2Array()
+	for j in prof.size():
+		var d := prof[mini(j + 1, prof.size() - 1)] - prof[maxi(j - 1, 0)]
+		var pn := Vector2(d.y, -d.x).normalized()   # outward, in the (radius, height) plane
+		var y := prof[j].y
+		var shade := lerpf(0.72, 1.0, smoothstep(-0.2, 0.4, y))
+		for i in segs + 1:
+			var th := TAU * i / segs
+			var r := prof[j].x
+			verts.append(Vector3(cos(th) * r * belly, y, sin(th) * r * belly * FLAT))
+			norms.append(Vector3(pn.x * cos(th) / belly, pn.y, pn.x * sin(th) / (belly * FLAT)).normalized())
+			cols.append(Color(shade, shade, shade))
+			uvs.append(Vector2(float(i) / segs, float(j) / (prof.size() - 1)))
+	var idx := PackedInt32Array()
+	var w := segs + 1
+	for j in prof.size() - 1:
+		for i in segs:
+			var a := j * w + i
+			var b := (j + 1) * w + i
+			idx.append_array([a, b + 1, b, a, a + 1, b + 1])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_COLOR] = cols
+	arr[Mesh.ARRAY_TEX_UV] = uvs
+	arr[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	_beans[key] = m
+	return m
+
+
+## The bean's radius at height `y` (waist space), for collars and scarves.
+static func bean_radius(y: float) -> float:
+	if y >= NECK_Y:
+		return sqrt(maxf(BEAN_R * BEAN_R - (y - NECK_Y) * (y - NECK_Y), 0.0))
+	var pts: Array = BEAN_PROFILE.duplicate()
+	pts.append(Vector2(NECK_Y, BEAN_R))
+	var n := pts.size()
+	for i in n - 1:
+		var a: Vector2 = pts[i]
+		var b: Vector2 = pts[i + 1]
+		if y <= b.x:
+			# The same spline as bean_mesh(), so accessories sit right on the surface.
+			var p0: Vector2 = pts[i - 1] if i > 0 else a * 2.0 - b
+			var p3: Vector2 = pts[i + 2] if i + 2 < n else b + Vector2(0.12, 0.0)
+			var t := clampf((y - a.x) / maxf(b.x - a.x, 0.001), 0.0, 1.0)
+			return maxf(cubic_interpolate(a.y, b.y, p0.y, p3.y, t), 0.0)
+	return BEAN_R
+
+
+## Accessories at the collar line, in the wardrobe accent colour: a bow tie, a ruffled collar,
+## a pearl necklace, or a scarf.
 func _build_outfit(outfit: StringName, _body_col: Color, accent: Color, belly: float) -> void:
-	var acc := _mat(accent)
-	var y := 0.46
-	var z := 0.36 * belly
+	var acc := _vinyl(accent, false, 0.5)
+	var y := 0.33
+	var r := bean_radius(y)
+	var ring := func(a: float, out: float, dy: float) -> Vector3:
+		return Vector3(cos(a) * (r + out) * belly, y + dy, sin(a) * (r + out) * belly * FLAT)
 	match outfit:
 		&"waistcoat":
-			# A ruffled collar.
-			for i in 8:
-				var a := PI * (0.15 + 0.7 * i / 7.0)
-				Mats.mesh(_waist, Mats.sphere(0.075, 0.1), _mat(Color("fff6e6")), Vector3(cos(a) * 0.34 * belly, y + 0.02, sin(a) * 0.33 * belly), Vector3.ZERO, Vector3(1.2, 0.7, 1.2))
-			Mats.mesh(_waist, Mats.sphere(0.035), Mats.gold(), Vector3(0, y - 0.06, z + 0.01))
+			var frill := _vinyl(Color("fff6e6"), false, 0.6)
+			for i in 9:
+				var a := PI * (0.12 + 0.76 * i / 8.0)
+				Mats.mesh(_waist, Mats.sphere(0.06, 0.08, 12), frill, ring.call(a, -0.01, 0.0), Vector3.ZERO, Vector3(1.25, 0.8, 1.25))
+			Mats.mesh(_waist, Mats.sphere(0.03), Mats.gold(), ring.call(PI * 0.5, 0.01, -0.07))
 		&"dress":
-			# A pearl necklace with a pendant.
-			for i in 11:
-				var a := PI * (0.12 + 0.76 * i / 10.0)
-				Mats.mesh(_waist, Mats.sphere(0.03), Mats.porcelain(Color("fbf6ee")), Vector3(cos(a) * 0.34 * belly, y - 0.02 - sin(a) * 0.06, sin(a) * 0.35 * belly))
-			Mats.mesh(_waist, Mats.sphere(0.045), acc, Vector3(0, y - 0.1, z + 0.02))
+			var pearl := Mats.porcelain(Color("fbf6ee"))
+			for i in 13:
+				var a := PI * (0.1 + 0.8 * i / 12.0)
+				Mats.mesh(_waist, Mats.sphere(0.024), pearl, ring.call(a, 0.012, -0.05 * sin(a)))
+			Mats.mesh(_waist, Mats.sphere(0.04), acc, ring.call(PI * 0.5, 0.02, -0.1))
 		&"cardigan":
-			# A cosy scarf.
-			Mats.mesh(_waist, Mats.torus(0.3 * belly, 0.42 * belly, 20), acc, Vector3(0, y, 0), Vector3(6, 0, 0))
-			Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.26, 0.05), 0.5), acc, Vector3(0.12, y - 0.14, z + 0.02), Vector3(0, 0, -12))
+			var sc := Mats.mesh(_waist, Mats.torus(r * belly - 0.035, r * belly + 0.05, 28), acc, Vector3(0, y, 0), Vector3.ZERO, Vector3(1, 1, FLAT))
+			sc.name = "Scarf"
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.09, 0.22, 0.045), 0.6), acc, ring.call(PI * 0.35, 0.03, -0.12), Vector3(0, 0, -10))
 		_:
-			# The classic bow tie.
-			Mats.mesh(_waist, Mats.softbox(Vector3(0.08, 0.07, 0.05), 0.5), acc, Vector3(0, y - 0.02, z))
+			var at: Vector3 = ring.call(PI * 0.5, 0.01, 0.0)
+			Mats.mesh(_waist, Mats.sphere(0.035, 0.06), acc, at)
 			for side in [1.0, -1.0]:
-				Mats.mesh(_waist, Mats.softbox(Vector3(0.11, 0.1, 0.05), 0.4, Vector2(0.5, 1.0)), acc, Vector3(0.075 * side, y - 0.02, z - 0.01), Vector3(0, 0, 90 * side))
+				Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.09, 0.045), 0.55, Vector2(0.5, 1.0)), acc, at + Vector3(0.065 * side, 0, -0.012), Vector3(0, 0, 90 * side))
 
 
 ## A little something on top of the bean (hats sit over it).
 func _build_hair(face: Node3D, style: StringName, hair: Material, _k: float) -> void:
+	var top := BEAN_R
 	match style:
 		&"side_part":
-			# A swirly curl.
-			Mats.mesh(face, Mats.torus(0.03, 0.08, 12), hair, Vector3(0.02, 0.34, 0.04), Vector3(0, 0, 90))
+			Mats.mesh(face, Mats.torus(0.022, 0.07, 14), hair, Vector3(0.02, top + 0.03, 0.03), Vector3(0, 0, 90))
 		&"bun":
-			Mats.mesh(face, Mats.sphere(0.11), hair, Vector3(0, 0.33, -0.12))
+			Mats.mesh(face, Mats.sphere(0.09), hair, Vector3(0, top - 0.02, -0.12))
 		&"curls":
 			for i in 3:
-				Mats.mesh(face, Mats.sphere(0.06), hair, Vector3(-0.08 + i * 0.08, 0.33 - absf(i - 1) * 0.02, 0.04))
+				Mats.mesh(face, Mats.sphere(0.05), hair, Vector3(-0.065 + i * 0.065, top - 0.005 - absf(i - 1) * 0.015, 0.04))
 		&"bald":
 			# A leaf sprout.
-			Mats.mesh(face, Mats.cylinder(0.012, 0.015, 0.1, 6), _mat(Color("3f8f3a")), Vector3(0, 0.37, 0))
-			Mats.mesh(face, Mats.sphere(0.06, 0.02), _mat(Color("5fbf4a")), Vector3(0.05, 0.42, 0), Vector3(0, 0, -30), Vector3(1.4, 1.0, 0.8))
+			Mats.mesh(face, Mats.cylinder(0.01, 0.014, 0.09, 6), _vinyl(Color("3f8f3a"), false), Vector3(0, top + 0.04, 0))
+			Mats.mesh(face, Mats.sphere(0.05, 0.02), _vinyl(Color("5fbf4a"), false), Vector3(0.045, top + 0.085, 0), Vector3(0, 0, -30), Vector3(1.4, 1.0, 0.8))
 		&"long":
 			for side in [1.0, -1.0]:
-				Mats.mesh(face, Mats.sphere(0.08), hair, Vector3(0.3 * side, 0.12, -0.06))
+				Mats.mesh(face, Mats.sphere(0.07), hair, Vector3(0.27 * side * _belly, 0.1, -0.08))
 		_:
-			Mats.mesh(face, Mats.cylinder(0.02, 0.05, 0.12, 8), hair, Vector3(0.02, 0.37, 0.02), Vector3(0, 0, -18))
+			Mats.mesh(face, Mats.cylinder(0.016, 0.042, 0.1, 10), hair, Vector3(0.02, top + 0.03, 0.02), Vector3(0, 0, -18))
 
 
 func _set_shadows(n: Node, on: bool) -> void:
@@ -381,33 +552,33 @@ func _set_shadows(n: Node, on: bool) -> void:
 
 
 func _build_face(face: Node3D, id: StringName) -> void:
-	var z := HEAD_R
 	match id:
 		&"moustache":
-			var m := Mats.solid(Color("3b2416"), 0.7)
+			var m := _vinyl(Color("3b2416"), false, 0.7)
 			for side in [1.0, -1.0]:
-				Mats.mesh(face, Mats.sphere(0.065, 0.13), m, Vector3(0.07 * side, -0.09, z + 0.02), Vector3(0, 0, -22 * side), Vector3(1.6, 0.6, 0.6))
-				Mats.mesh(face, Mats.sphere(0.032), m, Vector3(0.15 * side, -0.05, z - 0.01))
+				Mats.mesh(_on_face(face, 0.055 * side, -0.045, 0.012), Mats.sphere(0.052, 0.1), m, Vector3.ZERO, Vector3(0, 0, -22 * side), Vector3(1.6, 0.6, 0.6))
+				Mats.mesh(_on_face(face, 0.12 * side, -0.02, 0.0), Mats.sphere(0.026), m)
 		&"monocle":
-			Mats.mesh(face, Mats.torus(0.09, 0.11, 20), Mats.gold(), Vector3(-0.12, 0.07, z + 0.04), Vector3(90, 0, 0))
-			Mats.mesh(face, Mats.cylinder(0.006, 0.006, 0.3, 6), Mats.gold(), Vector3(-0.21, -0.07, z - 0.01), Vector3(0, 0, 25))
+			var pv := _on_face(face, -0.1, 0.055, 0.02)
+			Mats.mesh(pv, Mats.torus(0.078, 0.094, 24), Mats.gold(), Vector3.ZERO, Vector3(90, 0, 0))
+			Mats.mesh(pv, Mats.cylinder(0.005, 0.005, 0.26, 6), Mats.gold(), Vector3(-0.07, -0.13, -0.03), Vector3(0, 0, 25))
 		&"glasses":
-			var gl := Mats.solid(Color("2a1f33"), 0.4)
+			var gl := Mats.solid(Color("2a1f33"), 0.35)
 			for side in [1.0, -1.0]:
-				Mats.mesh(face, Mats.torus(0.095, 0.115, 20), gl, Vector3(0.12 * side, 0.07, z + 0.04), Vector3(90, 0, 0))
-			Mats.mesh(face, Mats.box(Vector3(0.05, 0.015, 0.015)), gl, Vector3(0, 0.08, z + 0.06))
+				Mats.mesh(_on_face(face, 0.1 * side, 0.055, 0.022), Mats.torus(0.076, 0.094, 24), gl, Vector3.ZERO, Vector3(90, 0, 0))
+			Mats.mesh(_on_face(face, 0.0, 0.065, 0.02), Mats.box(Vector3(0.04, 0.013, 0.013)), gl)
 		&"blush":
 			for side in [1.0, -1.0]:
-				Mats.mesh(face, Mats.sphere(0.055), Mats.solid(Color("ff7aa2"), 0.8), Vector3(0.2 * side, -0.07, z - 0.03), Vector3.ZERO, Vector3(1.2, 0.7, 0.3))
+				Mats.mesh(_on_face(face, 0.18 * side, -0.035, -0.004), Mats.sphere(0.048), Mats.solid(Color("ff7aa2"), 0.8), Vector3.ZERO, Vector3.ZERO, Vector3(1.25, 0.75, 0.3))
 		&"nose":
-			Mats.mesh(face, Mats.sphere(0.065), Mats.solid(Color("ff2e4d"), 0.2), Vector3(0, -0.03, z + 0.05))
+			Mats.mesh(_on_face(face, 0.0, -0.01, 0.02), Mats.sphere(0.05), Mats.solid(Color("ff2e4d"), 0.2))
 		&"shades":
 			var s := Mats.solid(Color("111118"), 0.1, 0.4)
 			for side in [1.0, -1.0]:
-				Mats.mesh(face, Mats.softbox(Vector3(0.16, 0.1, 0.03), 0.4), s, Vector3(0.12 * side, 0.075, z + 0.06))
-			Mats.mesh(face, Mats.box(Vector3(0.1, 0.02, 0.02)), s, Vector3(0, 0.1, z + 0.06))
+				Mats.mesh(_on_face(face, 0.1 * side, 0.06, 0.03), Mats.softbox(Vector3(0.14, 0.085, 0.025), 0.45), s)
+			Mats.mesh(_on_face(face, 0.0, 0.08, 0.03), Mats.box(Vector3(0.07, 0.016, 0.016)), s)
 		&"beard":
-			Mats.mesh(face, Mats.softbox(Vector3(0.46, 0.34, 0.2), 0.6, Vector2(1.1, 1.0)), Mats.solid(Color("f2f2f2"), 0.9), Vector3(0, -0.3, z - 0.06))
+			Mats.mesh(_on_face(face, 0.0, -0.15, -0.05), Mats.softbox(Vector3(0.4, 0.26, 0.16), 0.7, Vector2(1.1, 1.0)), _vinyl(Color("f2f2f2"), false, 0.9))
 
 
 func _build_tags() -> void:
@@ -520,6 +691,14 @@ func highlight(on: bool) -> void:
 		_shirt.emission_energy_multiplier = 0.35
 
 
+## Lights out: the eye whites glow (energy 0 = normal), so in the dark you see pairs of eyes.
+func set_eye_glow(energy: float) -> void:
+	if _eye_mat == null:
+		return
+	_eye_mat.emission_enabled = energy > 0.01
+	_eye_mat.emission_energy_multiplier = energy
+
+
 ## This guest's own hit bodies (a thrown cake ignores its thrower).
 func hitboxes() -> Array[PhysicsBody3D]:
 	var out: Array[PhysicsBody3D] = []
@@ -532,8 +711,8 @@ func hitboxes() -> Array[PhysicsBody3D]:
 ## Centre of the face (for cakes, the camera and voice).
 func head_position() -> Vector3:
 	if _head and is_instance_valid(_head) and _head.is_inside_tree():
-		return _head.global_transform * Vector3(0, 0.27, 0)
-	return global_position + Vector3(0, 1.6, 0)
+		return _head.global_transform * Vector3(0, 0.04, 0.12)
+	return global_position + Vector3(0, 1.3, 0)
 
 
 func is_down() -> bool:
@@ -546,10 +725,10 @@ func is_down() -> bool:
 ## Jelly: a slow breathing squash, plus a springy jiggle after every bump (wobble()).
 func _squash(delta: float) -> void:
 	_wobble = maxf(0.0, _wobble - delta * 1.4)
-	var b := sin(_t * 2.1) * 0.014 + sin(_t * 17.0) * _wobble * 0.1
-	for m in _jelly_parts:
-		if is_instance_valid(m):
-			m.scale = Vector3(1.0 - b * 0.6, 1.0 + b, 1.0 - b * 0.6)
+	var b := sin(_t * 2.1) * 0.012 + sin(_t * 17.0) * _wobble * 0.07
+	# The whole bean (face and arms included) squashes together, so nothing floats off it.
+	if _waist and is_instance_valid(_waist) and not _ragdolling:
+		_waist.scale = Vector3(1.0 - b * 0.6, 1.0 + b, 1.0 - b * 0.6)
 
 
 func wobble(amount: float = 1.0) -> void:
@@ -697,6 +876,8 @@ func _process(delta: float) -> void:
 	_t += delta
 	if not _ragdoll_parts.is_empty() and _corpse_head:
 		_googly(_corpse_head, _corpse_eyes, delta)
+		if _ragdolling or not alive:
+			_flop(delta)
 	_squash(delta)
 	if _rig == null or not is_instance_valid(_rig) or _ragdolling or (not alive and not is_ghost and _shake <= 0.0):
 		return
@@ -755,6 +936,11 @@ func _face(delta: float) -> void:
 	var open := _talk_open
 	var smile := 1.9 if _mood != &"sad" else 1.2
 	_mouth.scale = Vector3(smile - open * 0.6, 0.4 + open * 1.8, 0.4)
+	_mouth.visible = open > 0.12
+	if _smile:
+		_smile.visible = not _mouth.visible
+		_smile.rotation.z = PI if _mood in [&"sad", &"angry"] else 0.0
+		_smile.position.y = -0.01 if _smile.rotation.z > 0.0 else 0.012
 	var tilt := 0.0
 	var lift := 0.0
 	match _mood:
@@ -771,15 +957,16 @@ func _face(delta: float) -> void:
 	for i in _brows.size():
 		var side := 1.0 if i == 0 else -1.0
 		_brows[i].rotation.z = tilt * side
-		_brows[i].position.y = 0.19 + lift + (0.03 if _mood == &"sly" and i == 0 else 0.0)
+		_brows[i].position.y = lift + (0.03 if _mood == &"sly" and i == 0 else 0.0)
 	_blink -= delta
 	if _blink <= 0.0:
 		_blink = randf_range(2.0, 5.0)
 		for e in _eyes:
 			var eye: Node3D = (e["node"] as Node3D).get_parent()
+			var sy := eye.scale.x
 			var tw := eye.create_tween()
-			tw.tween_property(eye, "scale:y", 0.1, 0.06)
-			tw.tween_property(eye, "scale:y", 1.0, 0.08)
+			tw.tween_property(eye, "scale:y", sy * 0.1, 0.06)
+			tw.tween_property(eye, "scale:y", sy, 0.08)
 
 
 ## Googly pupils: a damped spring pulled by gravity and flung by the head's acceleration.
@@ -810,7 +997,7 @@ func _googly(head: Node3D, eyes: Array[Dictionary], delta: float) -> void:
 		e["vel"] = v
 		var node := e["node"] as Node3D
 		if is_instance_valid(node):
-			node.position = Vector3(off.x * 0.045, off.y * 0.045, 0.04)
+			node.position = Vector3(off.x * 0.026, off.y * 0.03, 0.026)
 
 
 ## A cake to the face without toppling: the head snaps back and the eyes spin.
@@ -834,7 +1021,8 @@ func frost(frosting: Color) -> void:
 	var face := _head.get_node_or_null("Face") as Node3D
 	if face == null:
 		return
-	var blob := Mats.mesh(face, Mats.sphere(0.11), Mats.solid(frosting, 0.6), Vector3(randf_range(-0.14, 0.14), randf_range(-0.08, 0.14), HEAD_R), Vector3.ZERO, Vector3(1.3, 1.0, 0.45))
+	var at := _on_face(face, randf_range(-0.13, 0.13), randf_range(-0.08, 0.12), -0.01)
+	var blob := Mats.mesh(at, Mats.sphere(0.1), Mats.solid(frosting, 0.6), Vector3.ZERO, Vector3.ZERO, Vector3(1.3, 1.0, 0.45))
 	blob.scale = Vector3.ONE * 0.1
 	blob.create_tween().tween_property(blob, "scale", Vector3(1.3, 1.0, 0.45), 0.12)
 	if is_local:
@@ -954,11 +1142,10 @@ func knockdown(from_dir: Vector3, seconds: float = 2.2) -> void:
 	var bodies := _go_ragdoll(true)
 	if bodies.is_empty():
 		return
-	bodies["head"].apply_central_impulse(dir * 3.5 + Vector3.UP * 1.0)
-	bodies["torso"].apply_central_impulse(dir * 5.0 + Vector3.UP * 1.5)
-	bodies["pelvis"].apply_central_impulse(dir * 2.0)
-	for k in ["fore_l", "fore_r"]:
-		bodies[k].apply_central_impulse(Vector3(randf_range(-1, 1), 2.0, randf_range(-1, 1)))
+	var body: RigidBody3D = bodies["body"]
+	# Knocked backwards off the chair: a shove plus a tumble about the sideways axis.
+	var flat := Vector3(dir.x, 0, dir.z).normalized() if Vector2(dir.x, dir.z).length() > 0.05 else global_basis * Vector3(0, 0, -1)
+	_launch(body, flat * 2.4 + Vector3.UP * 1.4, Vector3.UP.cross(flat) * 4.5 + Vector3(0, randf_range(-1.5, 1.5), 0))
 	Sfx.play_at(&"slide_whistle", head_position(), -8.0, 0.25)
 	var tw := create_tween()
 	tw.tween_interval(seconds)
@@ -1007,42 +1194,39 @@ func die(style: StringName = &"") -> float:
 func _finish_death(style: StringName, bodies: Dictionary) -> void:
 	_ragdolling = true
 	_knock_chair()
+	_x_eyes()
 	if bodies.is_empty():
-		for rb in _ragdoll_parts:
-			if is_instance_valid(rb):
-				rb.apply_central_impulse(Vector3(randf_range(-1, 1), 2.0, randf_range(-1, 1)))
+		var down := ragdoll_body()
+		if down:
+			_launch(down, Vector3(randf_range(-0.5, 0.5), 1.5, randf_range(-0.5, 0.5)), down.angular_velocity)
 		return
 	var away := global_transform.basis * Vector3(0, 0, -1)
 	var up := Vector3.UP
-	var torso: RigidBody3D = bodies["torso"]
-	var head: RigidBody3D = bodies["head"]
-	var pelvis: RigidBody3D = bodies["pelvis"]
+	var torso: RigidBody3D = bodies["body"]
+	var head: Node3D = _head
+	var side := away.cross(up).normalized()
+	# Velocities, not impulses: predictable whatever the body's mass (the tip-over axis is up x dir).
 	match style:
 		&"keel":
-			torso.apply_central_impulse(-away * 5.0 + up * 1.5)
-			head.apply_central_impulse(-away * 2.5)
+			# Face-first into the tea.
+			_launch(torso, -away * 0.9 + up * 0.4, up.cross(-away) * 3.5)
 			_splash_table()
 		&"spin":
-			pelvis.apply_central_impulse(up * 6.0)
-			torso.apply_torque_impulse(Vector3(0, 8.0, 0))
+			_launch(torso, up * 3.6, Vector3(0, 14.0, 0))
 		&"confetti":
 			_confetti(head.global_position)
 			Sfx.play_at(&"magic", head.global_position)
-			torso.apply_central_impulse(up * 7.0 + away * 2.0)
+			_launch(torso, up * 4.2 + away * 1.0, side * 5.0)
 		&"ascend":
-			for rb in _ragdoll_parts:
-				rb.gravity_scale = -0.12
-			torso.apply_central_impulse(up * 1.5)
+			torso.gravity_scale = -0.12
+			_launch(torso, up * 0.5, Vector3(randf_range(-0.5, 0.5), 0.8, 0))
 		&"yeet":
-			torso.apply_central_impulse(away * 18.0 + up * 9.0)
-			pelvis.apply_central_impulse(away * 10.0 + up * 5.0)
-			head.apply_central_impulse(away * 4.0)
+			_launch(torso, away * 7.5 + up * 5.0, side * 9.0)
 		&"stagger":
-			torso.apply_torque_impulse(Vector3(randf_range(-3, 3), 5.0, randf_range(-3, 3)))
-			torso.apply_central_impulse(away * 3.0 + up)
+			_launch(torso, away * 1.1 + up * 0.4, Vector3(randf_range(-1, 1), 5.0, randf_range(-1, 1)) + up.cross(away) * 1.5)
 		_:
-			torso.apply_central_impulse(away * 5.0 + up * 2.0)
-			head.apply_central_impulse(away * 1.8 + up * 0.6)
+			# A swoon: tip over backwards off the chair.
+			_launch(torso, away * 1.3 + up * 0.7, up.cross(away) * 3.2)
 	Sfx.play_at(&"slide_whistle", head.global_position, -2.0 if style == &"yeet" else -5.0)
 	var thud := create_tween()
 	thud.tween_interval(0.7)
@@ -1051,8 +1235,10 @@ func _finish_death(style: StringName, bodies: Dictionary) -> void:
 			Sfx.play_at(&"thud", torso.global_position))
 
 
-## Turns the rig into rigid bodies on cone-twist joints. `temporary` keeps a record so
-## _recover() can put every part back. Returns the bodies by name.
+## Turns the bean into one rigid body (the bean rolls and tumbles like a jelly sweet; a capsule
+## can't tangle or explode the way a chain of jointed limbs does) and lets the arms and legs flop
+## procedurally (_flop). `temporary` keeps a record so _recover() can put everything back.
+## Returns {"body": RigidBody3D}.
 func _go_ragdoll(temporary: bool) -> Dictionary:
 	var world := get_parent() as Node3D
 	if world == null or _rig == null or not is_instance_valid(_rig) or _hip_l == null or _ragdolling:
@@ -1062,85 +1248,184 @@ func _go_ragdoll(temporary: bool) -> Dictionary:
 	_release_held()
 	_knock_chair()
 	_detached.clear()
-	var bodies := {}
-	var make := func(node: Node3D, key: String, size: Vector3, offset: Vector3, mass: float) -> RigidBody3D:
-		var rb := RigidBody3D.new()
-		rb.collision_layer = L_RAGDOLL
-		rb.collision_mask = L_WORLD | L_RAGDOLL | L_PROPS
-		rb.mass = mass
-		var pm := PhysicsMaterial.new()
-		pm.bounce = 0.25
-		pm.friction = 0.9
-		rb.physics_material_override = pm
-		rb.angular_damp = 2.0
-		rb.linear_damp = 0.25
-		var gt := node.global_transform
+	_flop_t = 0.0
+	_waist.scale = Vector3.ONE
+	# The limbs to flop belong to this body (a ghost rig built later has its own).
+	_flop_limbs = [[_sh_l, 1.0, _el_l, 0.35, true], [_sh_r, -1.0, _el_r, 0.35, true], [_hip_l, 1.0, _kn_l, 0.25, false], [_hip_r, -1.0, _kn_r, 0.25, false]]
+	var rb := RigidBody3D.new()
+	rb.name = "BeanBody"
+	rb.collision_layer = L_RAGDOLL
+	rb.collision_mask = L_WORLD | L_RAGDOLL | L_PROPS
+	rb.mass = 6.0
+	rb.continuous_cd = true
+	rb.angular_damp = 1.6
+	rb.linear_damp = 0.15
+	rb.can_sleep = true
+	var pm := PhysicsMaterial.new()
+	pm.bounce = 0.3
+	pm.friction = 0.75
+	rb.physics_material_override = pm
+	var gt := _waist.global_transform.orthonormalized()
+	world.add_child(rb)
+	rb.global_transform = gt
+	# Never start inside our own chair (that is what used to fling guests across the room).
+	if chair is PhysicsBody3D:
+		rb.add_collision_exception_with(chair as PhysicsBody3D)
+	_pass_through.clear()
+	for node: Node3D in [_waist, _hip_l, _hip_r]:
+		var ngt := node.global_transform
 		_detached.append({"node": node, "parent": node.get_parent(), "local": node.transform})
-		world.add_child(rb)
-		rb.global_transform = gt.orthonormalized()
 		node.get_parent().remove_child(node)
 		rb.add_child(node)
-		node.transform = Transform3D(Basis.from_scale(gt.basis.get_scale()), Vector3.ZERO)
-		var k := gt.basis.get_scale().x
-		RoomBuilder._box_shape(rb, size * k, offset * k)
-		bodies[key] = rb
-		_ragdoll_parts.append(rb)
-		return rb
+		node.global_transform = ngt
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.3 * _belly
+	cap.height = maxf(1.02, cap.radius * 2.0 + 0.1)
+	var cs := CollisionShape3D.new()
+	cs.shape = cap
+	cs.position = Vector3(0, 0.33, 0)
+	rb.add_child(cs)
+	# A small ball for the legs, so the feet don't sink through the floor.
+	var legs := SphereShape3D.new()
+	legs.radius = 0.15
+	var ls := CollisionShape3D.new()
+	ls.shape = legs
+	ls.position = Vector3(0, -0.3, 0.06)
+	rb.add_child(ls)
+	_ragdoll_parts.append(rb)
+	# Anything the body starts inside (the table edge, a neighbour) is passed through until the
+	# bean is clear of it, instead of being shoved out at speed.
+	_push_clear(rb)
+	for body in _overlapping(rb):
+		rb.add_collision_exception_with(body)
+		_pass_through.append(body)
 	if _hat and is_instance_valid(_hat):
-		var hat_rb: RigidBody3D = make.call(_hat, "hat", Vector3(0.3, 0.2, 0.3), Vector3(0, 0.1, 0), 0.2)
-		hat_rb.apply_central_impulse(Vector3(randf_range(-0.5, 0.5), 1.4, randf_range(-0.5, 0.5)))
-		hat_rb.apply_torque_impulse(Vector3(randf_range(-0.1, 0.1), randf_range(-0.1, 0.1), randf_range(-0.1, 0.1)))
-	make.call(_head, "head", Vector3(0.64, 0.6, 0.56), Vector3(0, 0.22, 0), 1.8)
-	make.call(_el_l, "fore_l", Vector3(0.14, 0.34, 0.14), Vector3(0, -0.14, 0), 0.4)
-	make.call(_el_r, "fore_r", Vector3(0.14, 0.34, 0.14), Vector3(0, -0.14, 0), 0.4)
-	make.call(_sh_l, "up_l", Vector3(0.14, 0.2, 0.14), Vector3(0, -0.08, 0), 0.4)
-	make.call(_sh_r, "up_r", Vector3(0.14, 0.2, 0.14), Vector3(0, -0.08, 0), 0.4)
-	make.call(_kn_l, "shin_l", Vector3(0.17, 0.26, 0.24), Vector3(0, -0.11, 0.03), 0.6)
-	make.call(_kn_r, "shin_r", Vector3(0.17, 0.26, 0.24), Vector3(0, -0.11, 0.03), 0.6)
-	make.call(_hip_l, "thigh_l", Vector3(0.18, 0.22, 0.18), Vector3(0, -0.1, 0), 0.7)
-	make.call(_hip_r, "thigh_r", Vector3(0.18, 0.22, 0.18), Vector3(0, -0.1, 0), 0.7)
-	make.call(_waist, "torso", Vector3(0.66, 0.56, 0.56), Vector3(0, 0.25, 0), 4.0)
-	make.call(_hips, "pelvis", Vector3(0.6, 0.38, 0.5), Vector3(0, 0.04, 0), 3.0)
-	# Joints: [parent body, child body, pivot node (position), swing, twist]
-	var spec := [
-		["torso", "head", bodies["head"], 45.0, 30.0],
-		["torso", "up_l", bodies["up_l"], 85.0, 40.0], ["torso", "up_r", bodies["up_r"], 85.0, 40.0],
-		["up_l", "fore_l", bodies["fore_l"], 70.0, 10.0], ["up_r", "fore_r", bodies["fore_r"], 70.0, 10.0],
-		["pelvis", "thigh_l", bodies["thigh_l"], 65.0, 20.0], ["pelvis", "thigh_r", bodies["thigh_r"], 65.0, 20.0],
-		["thigh_l", "shin_l", bodies["shin_l"], 60.0, 5.0], ["thigh_r", "shin_r", bodies["shin_r"], 60.0, 5.0],
-		["pelvis", "torso", bodies["torso"], 30.0, 20.0],
-	]
-	_joints.clear()
-	for sp: Array in spec:
-		var a: RigidBody3D = bodies[sp[0]]
-		var b: RigidBody3D = bodies[sp[1]]
-		var j := ConeTwistJoint3D.new()
-		world.add_child(j)
-		# Twist axis (X) along the child limb.
-		var along := (b.global_basis * Vector3.DOWN).normalized()
-		if sp[1] == "head" or sp[1] == "torso":
-			along = (b.global_basis * Vector3.UP).normalized()
-		var side := along.cross(Vector3.FORWARD)
-		if side.length() < 0.1:
-			side = along.cross(Vector3.RIGHT)
-		side = side.normalized()
-		j.global_transform = Transform3D(Basis(along, side, along.cross(side).normalized()), b.global_position)
-		j.node_a = j.get_path_to(a)
-		j.node_b = j.get_path_to(b)
-		j.set_param(ConeTwistJoint3D.PARAM_SWING_SPAN, deg_to_rad(sp[3]))
-		j.set_param(ConeTwistJoint3D.PARAM_TWIST_SPAN, deg_to_rad(sp[4]))
-		j.set_param(ConeTwistJoint3D.PARAM_SOFTNESS, 0.8)
-		j.set_param(ConeTwistJoint3D.PARAM_RELAXATION, 1.0)
-		_joints.append(j)
+		var hat_rb := RigidBody3D.new()
+		hat_rb.collision_layer = L_RAGDOLL
+		hat_rb.collision_mask = L_WORLD | L_PROPS
+		hat_rb.mass = 0.2
+		hat_rb.continuous_cd = true
+		hat_rb.angular_damp = 1.0
+		var hgt := _hat.global_transform
+		_detached.append({"node": _hat, "parent": _hat.get_parent(), "local": _hat.transform})
+		world.add_child(hat_rb)
+		hat_rb.global_transform = hgt.orthonormalized()
+		_hat.get_parent().remove_child(_hat)
+		hat_rb.add_child(_hat)
+		_hat.transform = Transform3D(Basis.from_scale(hgt.basis.get_scale()), Vector3.ZERO)
+		RoomBuilder._box_shape(hat_rb, Vector3(0.26, 0.16, 0.26), Vector3(0, 0.08, 0))
+		hat_rb.add_collision_exception_with(rb)
+		_ragdoll_parts.append(hat_rb)
+		_launch(hat_rb, Vector3(randf_range(-1, 1), 3.0, randf_range(-1, 1)), Vector3(randf_range(-4, 4), randf_range(-4, 4), randf_range(-4, 4)))
+	_corpse_head = _head
 	if not temporary:
-		_corpse_head = _head
 		_corpse_eyes = _eyes.duplicate()
 		for e in _corpse_eyes:
 			e["vel"] = Vector2(randf_range(-30, 30), randf_range(-30, 30))
 	else:
-		_corpse_head = _head
 		_corpse_eyes = _eyes
-	return bodies
+	return {"body": rb}
+
+
+## The moving bodies (chairs, other ragdolls) that `rb`'s shapes overlap; static ones too with
+## `include_static`.
+func _overlapping(rb: RigidBody3D, include_static: bool = false) -> Array[PhysicsBody3D]:
+	var out: Array[PhysicsBody3D] = []
+	if not rb.is_inside_tree():
+		return out
+	var space := rb.get_world_3d().direct_space_state
+	for c in rb.get_children():
+		var cs := c as CollisionShape3D
+		if cs == null:
+			continue
+		var q := PhysicsShapeQueryParameters3D.new()
+		q.shape = cs.shape
+		q.transform = cs.global_transform
+		q.collision_mask = L_WORLD | L_RAGDOLL
+		q.exclude = [rb.get_rid()]
+		for hit: Dictionary in space.intersect_shape(q, 16):
+			var body := hit.get("collider") as PhysicsBody3D
+			if body and body != chair and not out.has(body) and (include_static or not body is StaticBody3D):
+				out.append(body)
+	return out
+
+
+## Slides a fresh body back out of the room's static geometry (the table edge), away from the
+## table, so the physics never has to shove it out.
+func _push_clear(rb: RigidBody3D) -> void:
+	var back := global_basis * Vector3(0, 0, -1)
+	for i in 10:
+		var hits := _overlapping(rb, true).filter(func(b: PhysicsBody3D) -> bool: return b is StaticBody3D)
+		if hits.is_empty():
+			return
+		rb.global_position += back * 0.04 + Vector3.UP * 0.01
+
+
+## Sets a ragdoll's motion directly (a freshly made body ignores impulses until its first step).
+func _launch(rb: RigidBody3D, lin: Vector3, ang: Vector3) -> void:
+	rb.linear_velocity = lin
+	rb.angular_velocity = ang
+
+
+## The rigid body while down (null otherwise).
+func ragdoll_body() -> RigidBody3D:
+	return _ragdoll_parts[0] if not _ragdoll_parts.is_empty() and is_instance_valid(_ragdoll_parts[0]) else null
+
+
+## While ragdolling: arms and legs hang towards the ground with a lag, so they swing and trail as
+## the bean tumbles, and settle limp once it stops. No joints, so nothing can jitter or tangle.
+func _flop(delta: float) -> void:
+	if _ragdoll_parts.is_empty() or _recovering:
+		return
+	var rb := _ragdoll_parts[0]
+	if not is_instance_valid(rb):
+		return
+	_flop_t += delta
+	_pass_check -= delta
+	if _pass_check <= 0.0 and not _pass_through.is_empty():
+		_pass_check = 0.1
+		var still := _overlapping(rb)
+		for body in _pass_through.duplicate():
+			if not is_instance_valid(body):
+				_pass_through.erase(body)
+			elif not still.has(body):
+				rb.remove_collision_exception_with(body)
+				_pass_through.erase(body)
+	var spin := rb.angular_velocity.length() + rb.linear_velocity.length() * 0.5
+	var w := 1.0 - exp(-(5.0 if alive else 3.0) * delta)
+	for l: Array in _flop_limbs:
+		var pv: Node3D = l[0]
+		var bend: Node3D = l[2]
+		if pv == null or not is_instance_valid(pv) or not pv.is_inside_tree():
+			continue
+		var side: float = l[1]
+		var down := (pv.get_parent() as Node3D).global_basis.inverse() * Vector3.DOWN
+		var wiggle := Vector3(sin(_flop_t * 13.0 + side), cos(_flop_t * 11.0 - side), sin(_flop_t * 9.0)) * minf(spin * 0.08, 0.6)
+		var want := _aim(down.normalized() + Vector3(side * float(l[3]), 0, 0.15) + wiggle)
+		pv.quaternion = pv.quaternion.slerp(want, w)
+		if bend and is_instance_valid(bend):
+			var knee := 0.35 + sin(_flop_t * 7.0 + side) * minf(spin * 0.1, 0.5)
+			bend.quaternion = bend.quaternion.slerp(Quaternion(Vector3.RIGHT, -knee if l[4] else knee), w)
+
+
+## Dead: the pupils become little X's.
+func _x_eyes() -> void:
+	for e in _eyes:
+		var pupil := e["node"] as Node3D
+		if pupil == null or not is_instance_valid(pupil):
+			continue
+		pupil.visible = false
+		var eye := pupil.get_parent() as Node3D
+		if eye.get_node_or_null("X"):
+			continue
+		var x := Node3D.new()
+		x.name = "X"
+		x.position = Vector3(0, 0, 0.03)
+		eye.add_child(x)
+		for a in [45.0, -45.0]:
+			Mats.mesh(x, Mats.box(Vector3(0.11, 0.024, 0.012)), Mats.solid(Color("1d1128"), 0.4), Vector3.ZERO, Vector3(0, 0, a))
+		if is_local:
+			_set_layers(x, LOCAL_LAYER)
 
 
 ## Back to the seat after a knockdown: every part glides home, then the rig takes over again.
@@ -1152,10 +1437,6 @@ func _recover() -> void:
 	for rb in _ragdoll_parts:
 		if is_instance_valid(rb):
 			rb.freeze = true
-	for j in _joints:
-		if is_instance_valid(j):
-			j.queue_free()
-	_joints.clear()
 	_recover_tw = create_tween().set_parallel(true)
 	for i in range(_detached.size() - 1, -1, -1):
 		var d: Dictionary = _detached[i]

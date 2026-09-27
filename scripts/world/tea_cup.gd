@@ -120,6 +120,23 @@ func set_highlight(on: bool) -> void:
 	_shell.visible = on
 
 
+var _glint: MeshInstance3D
+var _glint_mat: StandardMaterial3D
+
+
+## A faint warm gleam on the rim (energy 0 = off), so cups can still be picked out in the dark.
+func set_glint(energy: float) -> void:
+	if _glint == null:
+		if energy <= 0.0:
+			return
+		_glint_mat = StandardMaterial3D.new()
+		_glint_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_glint_mat.albedo_color = Color("ffd98a")
+		_glint = Mats.mesh(self, Mats.torus(0.128, 0.142, 28), _glint_mat, Vector3(0, 0.178, 0) * SCALE, Vector3.ZERO, Vector3.ONE * SCALE)
+	_glint.visible = energy > 0.01
+	_glint_mat.albedo_color = Color("ffd98a") * clampf(energy * 0.35, 0.0, 8.0)
+
+
 ## Small splash where an ingredient went in. `color` only for the dropper (others see a plain splash).
 func splash(color: Color = Color("7a3f1a")) -> void:
 	var drop := Mats.mesh(_drops, Mats.sphere(0.03), Mats.solid(color, 0.3), Vector3(0, 0.45, 0))

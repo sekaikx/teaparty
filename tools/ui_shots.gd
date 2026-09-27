@@ -19,6 +19,12 @@ func _ready() -> void:
 func _run() -> void:
 	var app := get_parent()
 	await get_tree().create_timer(1.5).timeout
+	await _shot("title", 0.1)
+	(app.get("_screen") as MainMenu).call(&"_credits")
+	await _shot("credits", 0.8)
+	for c in (app.get("_screen") as Node).get_children():
+		if c is CreditsPanel:
+			c.queue_free()
 	(app.get("_screen") as MainMenu).online_requested.emit()
 	await _shot("online", 1.0)
 	app.call(&"_close_overlay")

@@ -1,10 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect x="104" y="22" width="48" height="34" rx="10" fill="#b07a45" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M108 56h40v34c34 14 56 44 56 78 0 46-34 70-76 70s-76-24-76-70c0-34 22-64 56-78z" fill="#f4f7ee" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M60 162c10-8 26-12 44-8s36 12 52 10 30-8 40-12c2 44-28 70-68 70s-70-24-68-60z" fill="#6fcf3d"/>
-  <path d="M108 56h40v34c34 14 56 44 56 78 0 46-34 70-76 70s-76-24-76-70c0-34 22-64 56-78z" fill="none" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M128 132c-18 0-30 11-30 26 0 9 5 15 11 18v12h38v-12c6-3 11-9 11-18 0-15-12-26-30-26z" fill="#fff6e6" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round" stroke-width="8"/>
-  <circle cx="116" cy="158" r="7" fill="#1d1128"/><circle cx="140" cy="158" r="7" fill="#1d1128"/>
-  <path d="M120 188v-8M128 188v-8M136 188v-8" stroke="#1d1128" stroke-width="5"/>
-  <path d="M80 110c-8 12-10 26-8 38" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" opacity="0.8"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#87cc71"/>
+      <stop offset="1" stop-color="#4b9336"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="134" r="112" fill="#1d1128" opacity="0.35"/>
+  <circle cx="128" cy="126" r="112" fill="url(#g)" stroke="#1d1128" stroke-width="11"/>
+  <path d="M52 104 A80 80 0 0 1 204 104 A96 70 0 0 0 52 104 Z" fill="#ffffff" opacity="0.28"/>
+  <g transform="translate(56.32 63.32) scale(0.5600)" fill="#1d1128" color="#1d1128" opacity="0.35"><path d="M128,16C70.65,16,24,60.86,24,116c0,34.1,18.27,66,48,84.28V216a16,16,0,0,0,16,16h8a4,4,0,0,0,4-4V200.27a8.17,8.17,0,0,1,7.47-8.25,8,8,0,0,1,8.53,8v28a4,4,0,0,0,4,4h16a4,4,0,0,0,4-4V200.27a8.17,8.17,0,0,1,7.47-8.25,8,8,0,0,1,8.53,8v28a4,4,0,0,0,4,4h8a16,16,0,0,0,16-16V200.28C213.73,182,232,150.1,232,116,232,60.86,185.35,16,128,16ZM92,152a20,20,0,1,1,20-20A20,20,0,0,1,92,152Zm72,0a20,20,0,1,1,20-20A20,20,0,0,1,164,152Z"/></g>
+  <g transform="translate(56.32 56.32) scale(0.5600)" fill="#ffffff" color="#ffffff"><path d="M128,16C70.65,16,24,60.86,24,116c0,34.1,18.27,66,48,84.28V216a16,16,0,0,0,16,16h8a4,4,0,0,0,4-4V200.27a8.17,8.17,0,0,1,7.47-8.25,8,8,0,0,1,8.53,8v28a4,4,0,0,0,4,4h16a4,4,0,0,0,4-4V200.27a8.17,8.17,0,0,1,7.47-8.25,8,8,0,0,1,8.53,8v28a4,4,0,0,0,4,4h8a16,16,0,0,0,16-16V200.28C213.73,182,232,150.1,232,116,232,60.86,185.35,16,128,16ZM92,152a20,20,0,1,1,20-20A20,20,0,0,1,92,152Zm72,0a20,20,0,1,1,20-20A20,20,0,0,1,164,152Z"/></g>
 </svg>

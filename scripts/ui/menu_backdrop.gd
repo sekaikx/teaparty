@@ -11,10 +11,11 @@ var _chatter := 3.0
 func _ready() -> void:
 	name = "World"
 	var rb := RoomBuilder.new()
-	var room: StringName = [&"parlor", &"garden", &"banquet"][clampi(Profile.level() / 3, 0, 2)] if Profile.level() >= 3 else &"parlor"
-	add_child(rb.build(room, 5))
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
+	# Every room is open to everyone, so the menu shows a different one each time.
+	var room: StringName = [&"parlor", &"garden", &"banquet"][rng.randi_range(0, 2)]
+	add_child(rb.build(room, 5))
 	for i in 5:
 		var g := Guest.new()
 		add_child(g)
@@ -43,7 +44,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta * 0.06
-	var eye := Vector3(sin(_t) * 5.6, 4.4, cos(_t) * 5.6)
+	var eye := Vector3(sin(_t) * 6.2, 5.0, cos(_t) * 6.2)
 	_cam.global_transform = Transform3D(Basis(), eye).looking_at(Vector3(0, 0.9, 0), Vector3.UP)
 	_chatter -= delta
 	if _chatter <= 0.0 and not _guests.is_empty():

@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <path d="M128 24c30 0 40 24 40 44" fill="none" stroke="#1d1128" stroke-width="6"/>
-  <rect x="150" y="60" width="52" height="40" rx="8" fill="#ff8fb8" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round" stroke-width="9"/>
-  <path d="M164 80h24" stroke="#1d1128" stroke-width="6" stroke-linecap="round"/>
-  <path d="M78 74h100l-8 146c0 8-6 12-14 12H100c-8 0-14-4-14-12z" fill="#e9d8b6" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M78 74l18-20h64l18 20" fill="#d9c49a" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"/>
-  <g fill="#9a6b3e"><circle cx="112" cy="130" r="8"/><circle cx="142" cy="156" r="9"/><circle cx="118" cy="186" r="7"/><circle cx="150" cy="202" r="6"/><circle cx="104" cy="160" r="5"/></g>
-  <path d="M96 96v30" stroke="#ffffff" stroke-width="10" stroke-linecap="round" opacity="0.7"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d8a775"/>
+      <stop offset="1" stop-color="#a36b3a"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="134" r="112" fill="#1d1128" opacity="0.35"/>
+  <circle cx="128" cy="126" r="112" fill="url(#g)" stroke="#1d1128" stroke-width="11"/>
+  <path d="M52 104 A80 80 0 0 1 204 104 A96 70 0 0 0 52 104 Z" fill="#ffffff" opacity="0.28"/>
+  <g transform="translate(56.32 63.32) scale(0.5600)" fill="#1d1128" color="#1d1128" opacity="0.35"><path d="M223.45,40.07a8,8,0,0,0-7.52-7.52C139.8,28.08,78.82,51,52.82,94a87.09,87.09,0,0,0-12.76,49A101.72,101.72,0,0,0,46.7,175.2a4,4,0,0,0,6.61,1.43l85-86.3a8,8,0,0,1,11.32,11.32L56.74,195.94,42.55,210.13a8.2,8.2,0,0,0-.6,11.1,8,8,0,0,0,11.71.43l16.79-16.79c14.14,6.84,28.41,10.57,42.56,11.07q1.67.06,3.33.06A86.93,86.93,0,0,0,162,203.18C205,177.18,227.93,116.21,223.45,40.07Z"/></g>
+  <g transform="translate(56.32 56.32) scale(0.5600)" fill="#ffffff" color="#ffffff"><path d="M223.45,40.07a8,8,0,0,0-7.52-7.52C139.8,28.08,78.82,51,52.82,94a87.09,87.09,0,0,0-12.76,49A101.72,101.72,0,0,0,46.7,175.2a4,4,0,0,0,6.61,1.43l85-86.3a8,8,0,0,1,11.32,11.32L56.74,195.94,42.55,210.13a8.2,8.2,0,0,0-.6,11.1,8,8,0,0,0,11.71.43l16.79-16.79c14.14,6.84,28.41,10.57,42.56,11.07q1.67.06,3.33.06A86.93,86.93,0,0,0,162,203.18C205,177.18,227.93,116.21,223.45,40.07Z"/></g>
 </svg>

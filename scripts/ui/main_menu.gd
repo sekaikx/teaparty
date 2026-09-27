@@ -42,8 +42,12 @@ func _ready() -> void:
 	row.add_child(Ui.button("HOW TO PLAY", func() -> void: tutorial_requested.emit(), Ui.PINK, 22, Vector2(174, 58)))
 	var row2 := Ui.hbox(12)
 	col.add_child(row2)
-	row2.add_child(Ui.button("SETTINGS", func() -> void: settings_requested.emit(), Ui.LILAC, 20, Vector2(174, 50)))
-	row2.add_child(Ui.button("QUIT", func() -> void: get_tree().quit(), Ui.PLUM_LIGHT, 20, Vector2(174, 50)))
+	row2.add_child(Ui.button("SETTINGS", func() -> void: settings_requested.emit(), Ui.LILAC, 18, Vector2(112, 50)))
+	row2.add_child(Ui.button("CREDITS", func() -> void: _credits(), Ui.SKY, 18, Vector2(112, 50)))
+	row2.add_child(Ui.button("QUIT", func() -> void: get_tree().quit(), Ui.PLUM_LIGHT, 18, Vector2(112, 50)))
+	var ver := Ui.label("v%s" % ProjectSettings.get_setting("application/config/version", "1.0"), 14, Ui.MUTED, 700, 4)
+	add_child(ver)
+	Ui.pin(ver, Vector2(1, 1), Vector2(1, 1), Vector2(-16, -10))
 	_status = Ui.wrap(Ui.label("", 16, Ui.PINK, 700, 6), 360)
 	col.add_child(_status)
 
@@ -98,3 +102,9 @@ func _play_now() -> void:
 	var t := Tutorial.new()
 	t.closed.connect(func() -> void: Net.quick_play())
 	add_child(t)
+
+
+func _credits() -> void:
+	var c := CreditsPanel.new()
+	add_child(c)
+	c.closed.connect(c.queue_free)

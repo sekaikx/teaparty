@@ -187,7 +187,9 @@ func _process(delta: float) -> void:
 		if ph == Defs.Phase.POUR or ph == Defs.Phase.DEAL:
 			_brain.new_round(Session.public)
 		var key := "%s_r%d" % [Defs.PHASE_NAMES[ph].to_lower().replace(" ", "_").replace("!", ""), int(Session.public.get("round", 0))]
-		if ph in [Defs.Phase.INTRO, Defs.Phase.POUR, Defs.Phase.ITEMS]:
+		if ph == Defs.Phase.POUR:
+			_shot(key, 2.2)
+		elif ph in [Defs.Phase.INTRO, Defs.Phase.ITEMS]:
 			_shot(key, 1.2)
 		elif ph == Defs.Phase.TALK:
 			_shot(key, 6.0)

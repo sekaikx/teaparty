@@ -1,3 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <path d="M36 110h110V64l84 64-84 64v-46H36z" fill="#ffc93c" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc947"/>
+      <stop offset="1" stop-color="#cd9009"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="134" r="112" fill="#1d1128" opacity="0.35"/>
+  <circle cx="128" cy="126" r="112" fill="url(#g)" stroke="#1d1128" stroke-width="11"/>
+  <path d="M52 104 A80 80 0 0 1 204 104 A96 70 0 0 0 52 104 Z" fill="#ffffff" opacity="0.28"/>
+  <g transform="translate(56.32 63.32) scale(0.5600)" fill="#1d1128" color="#1d1128" opacity="0.35"><path d="M237.66,133.66l-96,96A8,8,0,0,1,128,224V184H48a16,16,0,0,1-16-16V88A16,16,0,0,1,48,72h80V32a8,8,0,0,1,13.66-5.66l96,96A8,8,0,0,1,237.66,133.66Z"/></g>
+  <g transform="translate(56.32 56.32) scale(0.5600)" fill="#ffffff" color="#ffffff"><path d="M237.66,133.66l-96,96A8,8,0,0,1,128,224V184H48a16,16,0,0,1-16-16V88A16,16,0,0,1,48,72h80V32a8,8,0,0,1,13.66-5.66l96,96A8,8,0,0,1,237.66,133.66Z"/></g>
 </svg>

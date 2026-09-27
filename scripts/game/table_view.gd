@@ -46,6 +46,20 @@ var _focus := Vector3.INF
 var _focus_until := 0
 var _arrow: Node3D
 var _arrow_target := Vector3.INF
+## Lights out (serving): 0 = lamps on .. 1 = dark. Every room light, the ambient light and the
+## sky go right down (the same in every renderer); what should still show in the dark stays:
+## your own candle, the others' glowing eyes, a glint on each cup rim, and a thin blue moonlight
+## so the guests read as silhouettes.
+var _dark := 0.0
+var _dark_on := false
+var _dark_tw: Tween
+var _env: Environment
+var _env_base := {}
+var _light_base: Dictionary = {}
+var _my_candle: Node3D
+var _my_light: OmniLight3D
+var _moon: DirectionalLight3D
+var _heart_t := 0.0
 
 
 func build(roster: Array, rules: Dictionary, seat: int) -> void:
@@ -368,6 +382,8 @@ func _place_camera(snap: bool) -> void:
 
 
 func shake(amount: float = 0.12) -> void:
+	if not bool(Profile.settings.get("shake", true)):
+		return
 	_shake = maxf(_shake, amount)
 
 
@@ -384,6 +400,8 @@ func _process(delta: float) -> void:
 			_held.follow(to_local(p), delta)
 	_update_highlights()
 	_update_arrow(delta)
+	if _dark > 0.0:
+		_dark_tick(delta)
 	if Input.is_action_just_pressed(&"throw_cake") and not Ui.typing():
 		throw_cake()
 	if layout.outdoor:
@@ -525,8 +543,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if not _dragging_cam:
 			_hover_seat = seat_at(mm.position, 0.0)
 		if _dragging_cam:
-			_orbit = clampf(_orbit - mm.relative.x * 0.004, -1.2, 1.2)
-			_pitch = clampf(_pitch - mm.relative.y * 0.003, -0.45, 0.35)
+			var sens := float(Profile.settings.get("look_sens", 1.0))
+			_orbit = clampf(_orbit - mm.relative.x * 0.004 * sens, -1.2, 1.2)
+			_pitch = clampf(_pitch - mm.relative.y * 0.003 * sens, -0.45, 0.35)
 	elif event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		match mb.button_index:
@@ -881,3 +900,148 @@ func _slow_mo() -> void:
 	tw.tween_callback(func() -> void: Engine.time_scale = 0.35)
 	tw.tween_interval(1.1)
 	tw.tween_method(func(v: float) -> void: Engine.time_scale = v, 0.35, 1.0, 0.5)
+
+
+# ---------------------------------------------------------------- lights out
+
+## Lights out while everyone serves, back on (with a flicker) when the pours are done.
+func set_lights_out(on: bool) -> void:
+	if on == _dark_on:
+		return
+	_dark_on = on
+	_dark_setup()
+	if _dark_tw and _dark_tw.is_valid():
+		_dark_tw.kill()
+	_dark_tw = create_tween()
+	if on:
+		Sfx.play(&"whoosh", -4.0)
+		_blow_candles(true)
+		_dark_tw.tween_method(_apply_dark, _dark, 1.0, 0.9).set_trans(Tween.TRANS_SINE)
+	else:
+		# The lamps stutter back on.
+		_dark_tw.tween_method(_apply_dark, _dark, 0.35, 0.12)
+		_dark_tw.tween_method(_apply_dark, 0.35, 0.85, 0.1)
+		_dark_tw.tween_method(_apply_dark, 0.85, 0.15, 0.12)
+		_dark_tw.tween_method(_apply_dark, 0.15, 0.6, 0.08)
+		_dark_tw.tween_method(_apply_dark, 0.6, 0.0, 0.25)
+		_dark_tw.tween_callback(func() -> void: _blow_candles(false))
+		Sfx.play(&"pop", -6.0)
+
+
+func is_dark() -> bool:
+	return _dark_on
+
+
+func _dark_setup() -> void:
+	if _env == null:
+		for n in layout.root.find_children("*", "WorldEnvironment", true, false):
+			_env = (n as WorldEnvironment).environment
+			_env_base = {"ambient": _env.ambient_light_energy, "bg": _env.background_energy_multiplier}
+			break
+		for n in layout.root.find_children("*", "Light3D", true, false):
+			if not n.has_meta(&"flicker"):
+				_light_base[n] = (n as Light3D).light_energy
+	if _my_candle == null and my_seat >= 0 and my_seat < layout.pot_spots.size():
+		# Your own little chamberstick, next to your teapot: in the dark it's all you can see by.
+		_my_candle = Node3D.new()
+		_my_candle.name = "MyCandle"
+		var spot := layout.pot_spots[my_seat]
+		var inward := Vector3(-spot.x, 0, -spot.z).normalized()
+		_my_candle.position = spot + inward.cross(Vector3.UP) * 0.32 + Vector3(0, 0, 0)
+		add_child(_my_candle)
+		Mats.mesh(_my_candle, Mats.cylinder(0.06, 0.075, 0.025, 16), Mats.gold(), Vector3(0, 0.012, 0))
+		Mats.mesh(_my_candle, Mats.cylinder(0.022, 0.024, 0.14, 10), Mats.solid(Color("f6efd9"), 0.6), Vector3(0, 0.095, 0))
+		var flame := Mats.mesh(_my_candle, Mats.sphere(0.018, 0.055), Mats.glow(Color("ffc56a"), 4.0), Vector3(0, 0.19, 0))
+		flame.name = "Flame"
+		_my_light = OmniLight3D.new()
+		_my_light.light_color = Color("ffb35a")
+		_my_light.omni_range = 1.5
+		_my_light.omni_attenuation = 2.0
+		_my_light.shadow_enabled = true
+		_my_light.position = Vector3(0, 0.28, 0)
+		_my_candle.add_child(_my_light)
+		_my_candle.visible = false
+	if _moon == null:
+		_moon = DirectionalLight3D.new()
+		_moon.name = "Moonlight"
+		_moon.light_color = Color("7f9cff")
+		_moon.light_energy = 0.0
+		_moon.shadow_enabled = false
+		_moon.rotation_degrees = Vector3(-35, 150, 0)
+		add_child(_moon)
+
+
+func _apply_dark(k: float) -> void:
+	_dark = k
+	var dim := lerpf(1.0, 0.03, k)
+	if _env:
+		_env.ambient_light_energy = float(_env_base["ambient"]) * lerpf(1.0, 0.05, k)
+		_env.background_energy_multiplier = float(_env_base["bg"]) * lerpf(1.0, 0.2, k)
+	for l: Light3D in _light_base:
+		if is_instance_valid(l):
+			l.light_energy = float(_light_base[l]) * dim
+	layout.light_k = lerpf(1.0, 0.1, k)
+	if _my_candle:
+		_my_candle.visible = k > 0.02 and Session.am_alive()
+		_my_light.light_energy = 0.4 * k
+	if _moon:
+		_moon.light_energy = 0.05 * k
+	for g in guests:
+		g.set_eye_glow(k * 1.6 if not g.is_local else 0.0)
+	for id: int in cups:
+		var cup: TeaCup = cups[id]
+		var live := bool(Session.seat_info(cup.seat).get("alive", false)) and cup.seat != my_seat
+		cup.set_glint(k * 2.2 if live else 0.0)
+
+
+## A flickering candle, and a slow heartbeat while it's dark.
+func _dark_tick(delta: float) -> void:
+	if _my_light and _dark_on:
+		_my_light.light_energy = 0.4 * _dark * (0.88 + 0.12 * sin(Time.get_ticks_msec() * 0.019) * sin(Time.get_ticks_msec() * 0.0071))
+	if _dark_on and _dark > 0.9:
+		_heart_t -= delta
+		if _heart_t <= 0.0:
+			_heart_t = 1.6
+			Sfx.play(&"heartbeat", -16.0)
+
+
+## Puffs the table candles out (with a wisp of smoke) or lights them again.
+func _blow_candles(out: bool) -> void:
+	for l in layout.candles:
+		if is_instance_valid(l):
+			l.visible = not out
+	for f in layout.flames:
+		if not is_instance_valid(f):
+			continue
+		f.visible = not out
+		if out:
+			_smoke(f.global_position)
+
+
+func _smoke(at: Vector3) -> void:
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.amount = 10
+	p.lifetime = 1.6
+	p.explosiveness = 0.6
+	p.direction = Vector3.UP
+	p.spread = 12.0
+	p.initial_velocity_min = 0.15
+	p.initial_velocity_max = 0.3
+	p.gravity = Vector3(0, 0.05, 0)
+	p.scale_amount_min = 0.5
+	p.scale_amount_max = 1.2
+	var q := QuadMesh.new()
+	q.size = Vector2(0.08, 0.08)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.albedo_color = Color(0.85, 0.85, 0.9, 0.35)
+	m.albedo_texture = TeaCup._soft_dot()
+	q.material = m
+	p.mesh = q
+	add_child(p)
+	p.global_position = at
+	p.emitting = true
+	get_tree().create_timer(2.0).timeout.connect(p.queue_free)

@@ -142,19 +142,27 @@ Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
 
 ## Friendslop features
 
-- **Jelly bean guests.** Each guest is one glossy jelly bean (head and body in a single rounded
-  shape) with stubby noodle arms and legs, round mitts, big googly eyes and blushing cheeks. They
-  wobble (squash and stretch) when they gesture, get bonked or climb back into their chair. Colour
-  comes from the player's name, plus a hair nub, a collar (bow tie, ruffle, pearls or scarf), and
-  the hat and face accessories from the wardrobe. The mouth flaps when you talk on voice chat.
+- **Jelly bean guests.** Each guest is one smooth, sculpted vinyl-toy bean (a lathed body whose
+  domed top is the head, so turning and nodding slide the face over the surface), with big glossy
+  eyes and sloshing pupils, blushing cheeks, a smile that opens when they talk, noodle arms with
+  round mitts and stubby legs. They squash and stretch when they gesture, get bonked or climb back
+  into their chair. Colour comes from the wardrobe, plus a hair nub, a collar (bow tie, ruffle,
+  pearls or scarf), and the hat and face accessories. Ghosts are a clean glowing bean.
+- **Lights out for real.** While everyone serves, the room actually goes dark: every lamp and the
+  fire go down, the table candles puff out in a wisp of smoke, and you pour by your own little
+  candle. The other guests become silhouettes with glowing eyes, and every cup rim glints so you can
+  still pick one. A slow heartbeat plays until the lamps stutter back on.
 - **Text chat for players without a mic.** Press **Enter** (or **T**) online to type up to 140
   characters. Lines show in the chat box and as a speech bubble over your bean. Ghosts chat only with
   other ghosts, so the dead can't tip anyone off.
-- **Ragdolls you cause.** A cake to the face turns the guest into a ragdoll (11 rigid bodies
-  joined with cone-twist limits). They flop off the chair, drop what they're holding, and 2 seconds later
-  snap back upright and say "I'M FINE". Deaths use the same ragdoll but stay down for the rest of the
-  match, with the chair tipping, the hat popping off and the cup flying. There are 8 death styles
-  (*Face in the Cake*, *Pirouette*, *Confetti Pop*, *Ascension*, *The Yeet*...).
+- **Ragdolls you cause.** A cake to the face knocks the guest off the chair: the bean becomes one
+  rolling rigid body with floppy procedural arms and legs (no chain of joints to jitter, tangle or
+  explode), drops what they're holding, and 2 seconds later snaps back upright saying "I'M FINE".
+  A body that starts inside the table is slid clear first, so nobody gets launched across the room.
+  Deaths use the same body but stay down with X'd-out eyes, the chair tipping, the hat popping off
+  and the cup flying. There are 8 death styles (*Face in the Cake*, *Pirouette*, *Confetti Pop*,
+  *Ascension*, *The Yeet*...). `tools/ragdoll_test.gd` checks every style for launches, falling
+  through the floor and jitter.
 - **Cakes that matter.** 3 per round (2 for ghosts). The host decides what each cake hits, so everyone
   sees the same outcome online.
 - **Slow-mo reveal.** The camera turns to whoever is collapsing, time slows down, and the screen shows
@@ -178,7 +186,7 @@ autoload/      Keys, Sfx (buses, helium), Profile (save / levels / cosmetics), S
                (host-authoritative match, RPCs, bots, cakes), Voice (push-to-talk)
 scripts/net/   steam_peer.gd (Godot multiplayer over GodotSteam P2P, host relays)
 scripts/core/  defs.gd, rules.gd (TeaRules: the game as data), bot_brain.gd, cosmetics.gd
-scripts/world/ guest.gd (jointed guests, poses, googly eyes, knockdown + death ragdolls, ghosts), cake.gd,
+scripts/world/ guest.gd (bean mesh, poses, googly eyes, knockdown + death ragdolls, ghosts), cake.gd,
                tea_cup.gd, teapot.gd, tableware.gd, hats.gd, room_builder.gd (rooms + colliders), mats.gd
 scripts/game/  table_view.gd (camera, coach arrow, picking, events -> animation, slow-mo)
 scripts/ui/    ui.gd (the style), game_hud.gd, tutorial.gd, main_menu.gd, online_panel.gd,
@@ -204,6 +212,8 @@ godot --headless --path . -- --qa --steam-join=1 --fake-steam=2 --speed=6
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --solo --shots=/tmp/shots          # every phase
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/bean_test.gd    # guests, cakes, ragdolls, ghosts
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/char_closeup.gd # studio renders + knockdown/recover
+godot --headless --path . -- --qa --tool=res://tools/ragdoll_test.gd    # knockdowns + every death style: no launches, jitter or falling through
+xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/app_icon.gd     # re-render the app icon, .ico and splash
 godot --headless --path . -- --qa --tool=res://tools/quickplay_test.gd  # PLAY NOW lands in a 6-seat match
 godot --headless --path . -- --qa --solo --pace --speed=8               # real timers: seconds per phase + cake hit stats
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/ui_shots.gd     # menus
@@ -216,7 +226,12 @@ python3 tools/audio/synth_tea_audio.py                                 # regener
   Lousberg, CC0), and the Quaternius Stylized Nature MegaKit (CC0). Ambience and music loops come
   from Woods too (made in-house).
 - Fonts: **Lilita One** and **Fredoka**, SIL Open Font License (`assets/fonts/OFL_*.txt`).
-- Guests, hats, faces, cups, teapots, cakes, icons, the UI style and the tea sounds are made
+- Icons: glyphs from **Phosphor Icons** (MIT, `assets/icons/src/LICENSE-phosphor.txt`) on our own
+  candy badges; `python3 tools/make_icons.py` rebuilds them. The app icon is rendered from the game's
+  own character (`tools/app_icon.gd`; the 1024 px master for store pages is in `store/`).
+- Made with **Godot Engine** (MIT) and **GodotSteam** (MIT). The in-game **CREDITS** screen lists
+  every notice.
+- Guests, hats, faces, cups, teapots, cakes, the UI style and the tea sounds are made
   procedurally in this repo.
 
 ## Known limitations

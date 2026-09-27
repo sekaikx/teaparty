@@ -1,8 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <ellipse cx="128" cy="206" rx="96" ry="20" fill="#ff8fb8" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"/>
-  <path d="M192 110c34 0 36 46 0 50" fill="none" stroke="#1d1128" stroke-width="26" stroke-linecap="round"/>
-  <path d="M192 110c34 0 36 46 0 50" fill="none" stroke="#fff6e6" stroke-width="12" stroke-linecap="round"/>
-  <path d="M50 92h156l-14 78c-3 14-16 22-30 22H94c-14 0-27-8-30-22z" fill="#fff6e6" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round"/>
-  <ellipse cx="128" cy="94" rx="76" ry="14" fill="#c98150" stroke="#1d1128" stroke-width="12" stroke-linejoin="round" stroke-linecap="round" stroke-width="9"/>
-  <path d="M58 122h140" stroke="#ff5c8a" stroke-width="10" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e9a975"/>
+      <stop offset="1" stop-color="#b56e3a"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="134" r="112" fill="#1d1128" opacity="0.35"/>
+  <circle cx="128" cy="126" r="112" fill="url(#g)" stroke="#1d1128" stroke-width="11"/>
+  <path d="M52 104 A80 80 0 0 1 204 104 A96 70 0 0 0 52 104 Z" fill="#ffffff" opacity="0.28"/>
+  <g transform="translate(56.32 63.32) scale(0.5600)" fill="#1d1128" color="#1d1128" opacity="0.35"><path d="M208,80H32a8,8,0,0,0-8,8v48a96.3,96.3,0,0,0,32.54,72H32a8,8,0,0,0,0,16H208a8,8,0,0,0,0-16H183.46a96.59,96.59,0,0,0,27-40.09A40,40,0,0,0,248,128v-8A40,40,0,0,0,208,80Zm24,48a24,24,0,0,1-17.2,23,95.78,95.78,0,0,0,1.2-15V97.38A24,24,0,0,1,232,120ZM112,56V24a8,8,0,0,1,16,0V56a8,8,0,0,1-16,0Zm32,0V24a8,8,0,0,1,16,0V56a8,8,0,0,1-16,0ZM80,56V24a8,8,0,0,1,16,0V56a8,8,0,0,1-16,0Z"/></g>
+  <g transform="translate(56.32 56.32) scale(0.5600)" fill="#ffffff" color="#ffffff"><path d="M208,80H32a8,8,0,0,0-8,8v48a96.3,96.3,0,0,0,32.54,72H32a8,8,0,0,0,0,16H208a8,8,0,0,0,0-16H183.46a96.59,96.59,0,0,0,27-40.09A40,40,0,0,0,248,128v-8A40,40,0,0,0,208,80Zm24,48a24,24,0,0,1-17.2,23,95.78,95.78,0,0,0,1.2-15V97.38A24,24,0,0,1,232,120ZM112,56V24a8,8,0,0,1,16,0V56a8,8,0,0,1-16,0Zm32,0V24a8,8,0,0,1,16,0V56a8,8,0,0,1-16,0ZM80,56V24a8,8,0,0,1,16,0V56a8,8,0,0,1-16,0Z"/></g>
 </svg>

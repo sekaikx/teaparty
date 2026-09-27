@@ -72,7 +72,7 @@ var _moment_sub: Label
 var _moment_q: Array = []
 var _moment_busy := false
 ## Serving happens in the dark: a dim overlay over the table.
-var _dark: ColorRect
+var _dark: TextureRect
 var _dark_tw: Tween
 ## The meeting: claim buttons, and the vote panel.
 var _claims: PanelContainer
@@ -100,8 +100,23 @@ func setup(p_table: TableView) -> void:
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
-	_dark = ColorRect.new()
-	_dark.color = Color(0.02, 0.0, 0.06, 0.0)
+	# A dark vignette at the screen edges (the room itself really goes dark, in 3D).
+	_dark = TextureRect.new()
+	var vg := Gradient.new()
+	vg.set_color(0, Color(0.02, 0.0, 0.06, 0.0))
+	vg.add_point(0.55, Color(0.02, 0.0, 0.06, 0.25))
+	vg.set_color(vg.get_point_count() - 1, Color(0.02, 0.0, 0.06, 0.9))
+	var vt := GradientTexture2D.new()
+	vt.gradient = vg
+	vt.fill = GradientTexture2D.FILL_RADIAL
+	vt.fill_from = Vector2(0.5, 0.5)
+	vt.fill_to = Vector2(1.05, 1.05)
+	vt.width = 256
+	vt.height = 256
+	_dark.texture = vt
+	_dark.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_dark.stretch_mode = TextureRect.STRETCH_SCALE
+	_dark.modulate.a = 0.0
 	_dark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_dark)
 	_dark.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -765,7 +780,9 @@ func _set_dark(on: bool) -> void:
 	if _dark_tw and _dark_tw.is_valid():
 		_dark_tw.kill()
 	_dark_tw = _dark.create_tween()
-	_dark_tw.tween_property(_dark, "color:a", 0.74 if on else 0.0, 0.6)
+	_dark_tw.tween_property(_dark, "modulate:a", 1.0 if on else 0.0, 0.7)
+	if table:
+		table.set_lights_out(on)
 	if on:
 		stamp("LIGHTS OUT", Color("c3a6ff"), 1.0)
 		Sfx.play(&"secret", -6.0)

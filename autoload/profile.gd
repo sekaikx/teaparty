@@ -190,6 +190,7 @@ func _apply_settings() -> void:
 	if not ephemeral and DisplayServer.get_name() != "headless":
 		_apply_window(bool(settings.get("fullscreen", true)))
 	_apply_quality()
+	Engine.max_fps = int(settings.get("max_fps", 0))
 
 
 ## Fullscreen (borderless, the desktop resolution) or a big centred window.

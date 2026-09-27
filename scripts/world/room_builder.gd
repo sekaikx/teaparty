@@ -19,12 +19,16 @@ var table_radii := Vector2(1.45, 1.45)
 var music := &"evening"
 var ambience := &""
 var candles: Array[OmniLight3D] = []
+## The candle flame meshes (lights out blows them out).
+var flames: Array[Node3D] = []
 var chairs: Array[Node3D] = []
 ## Where each guest's place card stands on the table.
 var card_spots: Array[Vector3] = []
 var outdoor := false
 ## Night party: moonlight, dim sky, candles on the table (and fireflies outdoors).
 var night := false
+## Dimmer for lights that animate themselves (the fire); lights out turns it down.
+var light_k := 1.0
 
 
 func build(room: StringName, count: int) -> Node3D:
@@ -90,7 +94,7 @@ func _apply_night() -> void:
 		var a := TAU * (i + 0.5) / k
 		var p := Vector3(cos(a) * table_radii.x * 0.62, TABLE_Y, sin(a) * table_radii.y * 0.62)
 		Mats.mesh(root, Mats.cylinder(0.03, 0.035, 0.18, 10), Mats.solid(Color("f6efd9"), 0.6), p + Vector3(0, 0.09, 0))
-		Mats.mesh(root, Mats.sphere(0.025, 0.06), Mats.glow(Color("ffc56a"), 5.0), p + Vector3(0, 0.21, 0))
+		flames.append(Mats.mesh(root, Mats.sphere(0.025, 0.06), Mats.glow(Color("ffc56a"), 5.0), p + Vector3(0, 0.21, 0)))
 		var l := OmniLight3D.new()
 		l.light_color = Color("ffb35a")
 		l.light_energy = 0.28
@@ -277,6 +281,7 @@ func _candle(parent: Node3D, pos: Vector3) -> void:
 	Mats.mesh(c, Mats.cylinder(0.07, 0.09, 0.04, 16), Mats.gold(), Vector3(0, 0.02, 0))
 	Mats.mesh(c, Mats.cylinder(0.03, 0.03, 0.26, 10), Mats.solid(Color("f6efd9"), 0.6), Vector3(0, 0.17, 0))
 	var flame := Mats.mesh(c, Mats.sphere(0.022, 0.07), Mats.glow(Color("ffc56a"), 4.0), Vector3(0, 0.33, 0))
+	flames.append(flame)
 	var tw := flame.create_tween().set_loops()
 	tw.tween_property(flame, "scale", Vector3(0.85, 1.2, 0.85), 0.21)
 	tw.tween_property(flame, "scale", Vector3(1.05, 0.9, 1.05), 0.17)
@@ -375,10 +380,12 @@ func _parlor() -> void:
 	fp.add_child(fire)
 	# The fire is the one bright light left at night (at 60%).
 	var fk := 0.6 if night else 1.0
+	fire.set_meta(&"flicker", true)
 	var ftw := fire.create_tween().set_loops()
-	ftw.tween_property(fire, "light_energy", 2.6 * fk, 0.23)
-	ftw.tween_property(fire, "light_energy", 1.9 * fk, 0.31)
-	ftw.tween_property(fire, "light_energy", 2.3 * fk, 0.17)
+	var set_fire := func(v: float) -> void: fire.light_energy = v * fk * light_k
+	ftw.tween_method(set_fire, 2.3, 2.6, 0.23)
+	ftw.tween_method(set_fire, 2.6, 1.9, 0.31)
+	ftw.tween_method(set_fire, 1.9, 2.3, 0.17)
 	var etw := embers.create_tween().set_loops()
 	etw.tween_property(embers, "scale", Vector3(1.5, 0.9, 0.6), 0.4)
 	etw.tween_property(embers, "scale", Vector3(1.35, 0.75, 0.6), 0.35)
