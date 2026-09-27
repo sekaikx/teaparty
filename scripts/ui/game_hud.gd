@@ -49,6 +49,13 @@ var _emotes: EmoteWheel
 var _pause: Control
 var _drag: TrayCard
 var _drag_ghost: TeaIcon
+## Click-click carrying (for touchpads): a quick click on a card picks it up, the next click drops it.
+var _drag_from := Vector2.ZERO
+var _drag_sticky := false
+## Frame-rate watch: suggest Low graphics once if the game is struggling.
+var _fps_t := 0.0
+var _fps_low := 0
+var _fps_told := false
 var _tray_sig := ""
 var _items_sig := ""
 var _guest_sig := ""
@@ -304,7 +311,8 @@ func _build_pause() -> void:
 
 # ---------------------------------------------------------------- per frame
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_watch_fps(delta)
 	var total := maxf(Session.phase_total, 0.01)
 	_pie.fraction = clampf(Session.phase_left / total, 0.0, 1.0) if Session.phase in TIMED else 0.0
 	_pie.seconds = ceili(Session.phase_left) if Session.phase in TIMED else 0
@@ -325,25 +333,86 @@ func _process(_delta: float) -> void:
 		Session.request_ready_up()
 
 
+func _watch_fps(delta: float) -> void:
+	if _fps_told or String(Profile.settings.get("quality", "high")) == "low":
+		return
+	_fps_t += delta
+	if _fps_t < 1.0:
+		return
+	_fps_t = 0.0
+	if Engine.get_frames_per_second() < 30.0 and Session.phase != P.INTRO:
+		_fps_low += 1
+	else:
+		_fps_low = maxi(0, _fps_low - 1)
+	if _fps_low >= 6:
+		_fps_told = true
+		var p := Ui.panel(Ui.YELLOW, 18, Vector4(16, 10, 16, 12))
+		var h := Ui.hbox(10)
+		p.add_child(h)
+		h.add_child(Ui.label("The game is running slowly (%d FPS)." % Engine.get_frames_per_second(), 16, Ui.INK, 700))
+		h.add_child(Ui.button("USE LOW GRAPHICS", func() -> void:
+			Profile.set_setting("quality", "low")
+			p.queue_free(), Ui.MINT, 16, Vector2(0, 40)))
+		h.add_child(Ui.button("NO", func() -> void: p.queue_free(), Ui.PLUM_LIGHT, 16, Vector2(60, 40)))
+		_root.add_child(p)
+		Ui.pin(p, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -150))
+
+
 func _input(event: InputEvent) -> void:
+	var mbe := event as InputEventMouseButton
+	if _drag and mbe and mbe.button_index == MOUSE_BUTTON_RIGHT and mbe.pressed:
+		_cancel_drag()
+		get_viewport().set_input_as_handled()
+		return
+	if _drag and mbe and mbe.button_index == MOUSE_BUTTON_LEFT:
+		if not mbe.pressed and not _drag_sticky and mbe.position.distance_to(_drag_from) < 10.0:
+			# Just a click on the card: keep carrying it until the next click.
+			_drag_sticky = true
+			get_viewport().set_input_as_handled()
+			return
+		if _drag_sticky and not mbe.pressed:
+			get_viewport().set_input_as_handled()
+			return
+		if _drag_sticky and mbe.pressed:
+			_drag_sticky = false
+			_drop_drag(mbe.position)
+			get_viewport().set_input_as_handled()
+			return
 	if _drag and event is InputEventMouseButton and not event.is_pressed() and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
-		var card := _drag
-		_drag = null
-		if _drag_ghost:
-			_drag_ghost.queue_free()
-			_drag_ghost = null
-		card.modulate.a = 1.0
-		if not _tray_panel.get_global_rect().has_point((event as InputEventMouseButton).position):
-			if table.drop_card((event as InputEventMouseButton).position, card.index, card.is_spike):
-				card.queue_free()
-			else:
-				Sfx.play(&"boing", -8.0)
-				_wiggle_coach()
+		_drop_drag((event as InputEventMouseButton).position)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed(&"pause") and _drag:
+		_cancel_drag()
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed(&"pause") and table.targeting < 0 and _drag == null:
 		_pause.visible = not _pause.visible
 		Sfx.play(&"pop", -6.0)
 		get_viewport().set_input_as_handled()
+
+
+func _cancel_drag() -> void:
+	if _drag:
+		_drag.modulate.a = 1.0
+	_drag = null
+	_drag_sticky = false
+	if _drag_ghost:
+		_drag_ghost.queue_free()
+		_drag_ghost = null
+
+
+func _drop_drag(pos: Vector2) -> void:
+	var card := _drag
+	_drag = null
+	if _drag_ghost:
+		_drag_ghost.queue_free()
+		_drag_ghost = null
+	card.modulate.a = 1.0
+	if not _tray_panel.get_global_rect().has_point(pos):
+		if table.drop_card(pos, card.index, card.is_spike):
+			card.queue_free()
+		else:
+			Sfx.play(&"boing", -8.0)
+			_wiggle_coach()
 
 
 func _start_drag(card: TrayCard) -> void:
@@ -355,6 +424,8 @@ func _start_drag(card: TrayCard) -> void:
 		Sfx.play(&"boing", -8.0)
 		return
 	_drag = card
+	_drag_from = get_viewport().get_mouse_position()
+	_drag_sticky = false
 	card.modulate.a = 0.35
 	_drag_ghost = TeaIcon.make(TeaIcon.Kind.SPIKE if card.is_spike else TeaIcon.Kind.INGREDIENT, card.value, 80)
 	_drag_ghost.size = Vector2(80, 80)
@@ -544,7 +615,7 @@ func _coach_text_for() -> Array:
 				return ["CLICK ANYONE'S CUP", "Pour into any other guest's cup. Nobody can see where (it's dark).", Ui.YELLOW]
 			if not table.tea_poured:
 				return ["LIGHTS OUT! CLICK YOUR TEAPOT", ("Serve someone POISON (tray, bottom left). Pick a victim." if poisoner else "Serve someone a cup. Plain, sugar, or the antidote if you have it."), Ui.YELLOW]
-			return ["DRAG A CARD INTO %s'S CUP" % target, ("POISON kills. Or pour something harmless to stay clean." if poisoner else "Remember what you poured: it's your alibi."), Ui.PINK]
+			return ["DRAG A CARD INTO %s'S CUP (or click card, click cup)" % target, ("POISON kills. Or pour something harmless to stay clean." if poisoner else "Remember what you poured: it's your alibi."), Ui.PINK]
 		P.ITEMS:
 			if Session.items_resolving():
 				return ["PLAYING THE ITEMS...", "Sniffs and watches first (secret), then swaps (everyone sees).", Ui.LILAC]

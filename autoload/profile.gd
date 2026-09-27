@@ -15,7 +15,7 @@ var owned: Array[String] = []
 var equipped: Dictionary = Cosmetics.DEFAULT_EQUIP.duplicate()
 var stats: Dictionary = {}
 var settings := {"master": 0.9, "music": 0.55, "sfx": 0.85, "voice": 1.0, "mic": true,
-	"fullscreen": false, "last_ip": "127.0.0.1", "tutorial_seen": false}
+	"fullscreen": true, "last_ip": "127.0.0.1", "tutorial_seen": false, "quality": "high", "settings_version": 2}
 ## On Steam, show your Steam name instead of the typed one.
 var use_steam_name := true
 ## Tests and the QA harness set this so they never touch the real save.
@@ -187,10 +187,39 @@ func _apply_settings() -> void:
 			AudioServer.set_bus_volume_db(bus, linear_to_db(maxf(v, 0.0001)))
 			AudioServer.set_bus_mute(bus, v <= 0.001)
 	if not ephemeral and DisplayServer.get_name() != "headless":
-		var fs := bool(settings.get("fullscreen", false))
-		var want := DisplayServer.WINDOW_MODE_FULLSCREEN if fs else DisplayServer.WINDOW_MODE_WINDOWED
-		if DisplayServer.window_get_mode() != want and (fs or DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN):
-			DisplayServer.window_set_mode(want)
+		_apply_window(bool(settings.get("fullscreen", true)))
+	_apply_quality()
+
+
+## Fullscreen (borderless, the desktop resolution) or a big centred window.
+func _apply_window(fs: bool) -> void:
+	var mode := DisplayServer.window_get_mode()
+	var is_fs := mode in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]
+	if fs and not is_fs:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+	elif not fs and (is_fs or mode == DisplayServer.WINDOW_MODE_MINIMIZED):
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+		var scr := DisplayServer.window_get_current_screen()
+		var area := DisplayServer.screen_get_usable_rect(scr)
+		var size := Vector2i(area.size * 0.8)
+		# Keep 16:9.
+		size.y = mini(size.y, size.x * 9 / 16)
+		size.x = size.y * 16 / 9
+		DisplayServer.window_set_size(size)
+		DisplayServer.window_set_position(area.position + (area.size - size) / 2)
+
+
+## "high" or "low" (for weaker laptops: no MSAA, lower 3D resolution, fewer shadows).
+func _apply_quality() -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return
+	var low := String(settings.get("quality", "high")) == "low"
+	tree.root.msaa_3d = Viewport.MSAA_DISABLED if low else Viewport.MSAA_2X
+	tree.root.scaling_3d_scale = 0.75 if low else 1.0
+	tree.root.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if low else Viewport.SCALING_3D_MODE_BILINEAR
+	RenderingServer.directional_shadow_atlas_set_size(2048 if low else 4096, true)
+	tree.root.positional_shadow_atlas_size = 1024 if low else 4096
 
 
 # ---------------------------------------------------------------- save
@@ -237,3 +266,7 @@ func load_profile() -> void:
 	var se: Dictionary = cf.get_value("player", "settings", {})
 	for k: String in se:
 		settings[k] = se[k]
+	# Older saves defaulted to a small window: move them to fullscreen once.
+	if int(settings.get("settings_version", 1)) < 2:
+		settings["fullscreen"] = true
+		settings["settings_version"] = 2

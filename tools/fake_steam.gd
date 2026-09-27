@@ -10,6 +10,8 @@ signal lobby_created(result: int, lobby_id: int)
 signal lobby_joined(lobby_id: int, permissions: int, locked: bool, response: int)
 signal lobby_match_list(lobbies: Array)
 signal join_requested(lobby_id: int, friend_id: int)
+signal lobby_invite(inviter: int, lobby: int, game: int)
+signal persona_state_change(steam_id: int, flags: int)
 signal p2p_session_request(remote_id: int)
 signal p2p_session_connect_fail(remote_id: int, error: int)
 
@@ -109,3 +111,37 @@ func getLobbyOwner(lobby: int) -> int:
 
 func leaveLobby(_lobby: int) -> void:
 	pass
+
+
+# ---------------------------------------------------------------- friends (for UI tests)
+
+const FAKE_FRIENDS := [["Clara", 1, 480], ["Dev", 1, 0], ["Eli", 3, 0], ["Finn", 0, 0], ["Baron Jam IRL", 0, 0]]
+
+
+func getFriendCount(_flags: int) -> int:
+	return FAKE_FRIENDS.size()
+
+
+func getFriendByIndex(i: int, _flags: int) -> int:
+	return 900 + i
+
+
+func getFriendPersonaName(fid: int) -> String:
+	return String(FAKE_FRIENDS[fid - 900][0]) if fid >= 900 and fid - 900 < FAKE_FRIENDS.size() else "Host%d" % fid
+
+
+func getFriendPersonaState(fid: int) -> int:
+	return int(FAKE_FRIENDS[fid - 900][1])
+
+
+func getFriendGamePlayed(fid: int) -> Dictionary:
+	var g := int(FAKE_FRIENDS[fid - 900][2])
+	return {"id": g} if g != 0 else {}
+
+
+func inviteUserToLobby(_lobby: int, _friend: int) -> bool:
+	return true
+
+
+func isOverlayEnabled() -> bool:
+	return false

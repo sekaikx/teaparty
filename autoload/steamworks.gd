@@ -16,6 +16,9 @@ signal lobby_created(lobby_id: int)
 signal lobby_entered(lobby_id: int, owner_id: int)
 signal lobby_failed(reason: String)
 signal lobby_list(lobbies: Array)
+## A friend invited you (in-game popup): their name and the lobby.
+signal invited(from_name: String, lobby_id: int)
+signal friends_changed
 
 const APP_ID := 480
 const TAG := "teaparty-v2"
@@ -35,6 +38,25 @@ var steam_id := 0
 var persona := ""
 var lobby_id := 0
 var _pending_join := 0
+## The last lines of the connection log (also in user://net_log.txt).
+var log_lines: Array[String] = []
+const FRIEND_FLAG_IMMEDIATE := 4
+const PERSONA_OFFLINE := 0
+
+
+## One line of the connection log: printed, kept for the UI, and written to user://net_log.txt so a
+## failed join can be looked at afterwards (Windows: %APPDATA%\Godot\app_userdata\Tea Party).
+func net_log(text: String) -> void:
+	var line := "%s %s" % [Time.get_time_string_from_system(), text]
+	print("[Net] ", line)
+	log_lines.append(line)
+	if log_lines.size() > 60:
+		log_lines.remove_at(0)
+	var f := FileAccess.open("user://net_log.txt", FileAccess.READ_WRITE if FileAccess.file_exists("user://net_log.txt") else FileAccess.WRITE)
+	if f:
+		f.seek_end()
+		f.store_line(line)
+		f.close()
 
 
 func _ready() -> void:
@@ -77,6 +99,13 @@ func _ready() -> void:
 		id = int(steam.call("getSteamID"))
 	steam_id = id
 	persona = String(steam.call("getPersonaName"))
+	# Start Valve's relay network now so the first connection doesn't have to wait for it.
+	if steam.has_method(&"initRelayNetworkAccess"):
+		steam.call(&"initRelayNetworkAccess")
+	var f := FileAccess.open("user://net_log.txt", FileAccess.WRITE)
+	if f:
+		f.close()
+	net_log("steam ok: %s (%d), app %s" % [persona, steam_id, str(steam.call(&"getAppID")) if steam.has_method(&"getAppID") else "?"])
 	available = steam_id != 0
 	reason = "" if available else "Steam started but you're not logged in."
 	print("[Steam] ", "connected as %s (%d)" % [persona, steam_id] if available else reason)
@@ -84,6 +113,8 @@ func _ready() -> void:
 	_connect(&"lobby_joined", _on_lobby_joined)
 	_connect(&"lobby_match_list", _on_lobby_match_list)
 	_connect(&"join_requested", _on_join_requested)
+	_connect(&"lobby_invite", _on_lobby_invite)
+	_connect(&"persona_state_change", func(_id: int, _flags: int) -> void: friends_changed.emit())
 	# Launched from a friend's invite ("+connect_lobby <id>").
 	var args := OS.get_cmdline_args()
 	for i in args.size():
@@ -152,14 +183,24 @@ func create_lobby(public: bool, max_members: int) -> void:
 	if not available:
 		lobby_failed.emit(reason)
 		return
-	steam.call(&"createLobby", LOBBY_PUBLIC if public else LOBBY_FRIENDS, max_members)
+	# Always a public lobby so anyone with the code can join; "listed" decides whether it shows
+	# up in FIND PUBLIC PARTIES. (A friends-only lobby refuses a code from a non-friend.)
+	_listed = public
+	net_log("creating a lobby (listed: %s)" % public)
+	steam.call(&"createLobby", LOBBY_PUBLIC, max_members)
+
+
+var _listed := false
 
 
 func _on_lobby_created(result: int, id: int) -> void:
 	if result != RESULT_OK:
+		net_log("lobby create failed: %d" % result)
 		lobby_failed.emit("Steam couldn't create a lobby (error %d)." % result)
 		return
 	lobby_id = id
+	net_log("lobby %d created" % id)
+	steam.call(&"setLobbyData", id, "listed", "1" if _listed else "0")
 	steam.call(&"setLobbyData", id, "tag", TAG)
 	steam.call(&"setLobbyData", id, "name", "%s's tea party" % persona)
 	steam.call(&"setLobbyData", id, "host", str(steam_id))
@@ -172,20 +213,31 @@ func join_lobby(id: int) -> void:
 		lobby_failed.emit(reason)
 		return
 	Net.join_steam_pending()
+	net_log("joining lobby %d" % id)
 	steam.call(&"joinLobby", id)
 
 
 func _on_lobby_joined(id: int, _permissions: int, _locked: bool, response: int) -> void:
+	net_log("lobby %d joined, response %d" % [id, response])
 	if response != ENTER_SUCCESS:
-		lobby_failed.emit("Couldn't join that tea party (it may be full or gone). Code %d." % response)
+		var why := {2: "that party doesn't exist any more", 3: "you're not allowed in", 4: "it's full", 5: "Steam had an error",
+			6: "you're banned from it", 7: "you need a Steam account in good standing", 9: "the host blocked you"}.get(response, "error %d" % response) as String
+		lobby_failed.emit("Couldn't join that tea party: %s." % why)
 		return
 	lobby_id = id
 	var owner := int(steam.call(&"getLobbyOwner", id))
+	net_log("the host is %d" % owner)
 	if owner == steam_id:
 		if not (Net.is_steam and Net.is_host()):
 			lobby_failed.emit("That's your own party. Steam can't connect you to yourself: to test online, use a second PC (or a friend) with a DIFFERENT Steam account.")
 		return   # our own lobby: we're the host already
 	lobby_entered.emit(id, owner)
+
+
+func _on_lobby_invite(inviter: int, lobby: int, _game: int) -> void:
+	var nm := String(steam.call(&"getFriendPersonaName", inviter)) if steam.has_method(&"getFriendPersonaName") else "A friend"
+	net_log("invite from %s to lobby %d" % [nm, lobby])
+	invited.emit(nm, lobby)
 
 
 func _on_join_requested(id: int, _friend: int) -> void:
@@ -206,6 +258,44 @@ func invite_friends() -> void:
 		steam.call(&"activateGameOverlayInviteDialog", lobby_id)
 
 
+func overlay_works() -> bool:
+	return available and steam.has_method(&"isOverlayEnabled") and bool(steam.call(&"isOverlayEnabled"))
+
+
+## Your Steam friends: [{id, name, online, in_game}], online ones first, Tea Party players first.
+func friends() -> Array:
+	var out: Array = []
+	if not available or not steam.has_method(&"getFriendCount"):
+		return out
+	var n := int(steam.call(&"getFriendCount", FRIEND_FLAG_IMMEDIATE))
+	for i in n:
+		var fid := int(steam.call(&"getFriendByIndex", i, FRIEND_FLAG_IMMEDIATE))
+		if fid == 0:
+			continue
+		var state := int(steam.call(&"getFriendPersonaState", fid))
+		var game: Dictionary = steam.call(&"getFriendGamePlayed", fid)
+		var gid := int(game.get("id", game.get("game_id", game.get("app_id", 0))))
+		out.append({"id": fid, "name": String(steam.call(&"getFriendPersonaName", fid)), "online": state != PERSONA_OFFLINE,
+			"in_game": gid == APP_ID})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a["in_game"] != b["in_game"]:
+			return a["in_game"]
+		if a["online"] != b["online"]:
+			return a["online"]
+		return String(a["name"]).naturalnocasecmp_to(String(b["name"])) < 0)
+	return out
+
+
+## Send a friend a Steam invite to your lobby (shows up in their Steam chat, and as a popup if
+## they're already in Tea Party).
+func invite(friend_id: int) -> bool:
+	if not available or lobby_id == 0:
+		return false
+	var ok := bool(steam.call(&"inviteUserToLobby", lobby_id, friend_id))
+	net_log("invite %d -> %s" % [friend_id, ok])
+	return ok
+
+
 func set_lobby_joinable(on: bool) -> void:
 	if available and lobby_id != 0:
 		steam.call(&"setLobbyJoinable", lobby_id, on)
@@ -218,6 +308,7 @@ func refresh_lobbies() -> void:
 		return
 	steam.call(&"addRequestLobbyListDistanceFilter", DISTANCE_WORLDWIDE)
 	steam.call(&"addRequestLobbyListStringFilter", "tag", TAG, COMPARE_EQUAL)
+	steam.call(&"addRequestLobbyListStringFilter", "listed", "1", COMPARE_EQUAL)
 	steam.call(&"requestLobbyList")
 
 

@@ -46,7 +46,7 @@ func _ready() -> void:
 	var bh := Ui.hbox(8)
 	lv.add_child(bh)
 	if Net.is_steam:
-		bh.add_child(Ui.button("INVITE FRIENDS", func() -> void: Steamworks.invite_friends(), Ui.SKY, 18, Vector2(0, 48)))
+		bh.add_child(Ui.button("INVITE FRIENDS", func() -> void: add_child(FriendsPanel.new()), Ui.SKY, 18, Vector2(0, 48)))
 	if Net.is_host():
 		bh.add_child(Ui.button("+ BOT", func() -> void: Net.add_bot(), Ui.MINT, 18, Vector2(0, 48)))
 		bh.add_child(Ui.button("- BOT", func() -> void: Net.remove_bot(), Ui.LILAC, 18, Vector2(0, 48)))

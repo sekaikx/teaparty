@@ -35,6 +35,8 @@ var _pitch := 0.0
 var _death_cam_until := 0
 var _zoom := 0.0
 var _dragging_cam := false
+## Where the cursor was when you started looking around (it's hidden and locked meanwhile).
+var _look_from := Vector2.ZERO
 var _shake := 0.0
 var _drinking: Dictionary = {}
 var _cam_base: Transform3D
@@ -519,7 +521,8 @@ func cup_at_seat(seat: int) -> TeaCup:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
-		_hover_seat = seat_at(mm.position, 0.0)
+		if not _dragging_cam:
+			_hover_seat = seat_at(mm.position, 0.0)
 		if _dragging_cam:
 			_orbit = clampf(_orbit - mm.relative.x * 0.004, -1.2, 1.2)
 			_pitch = clampf(_pitch - mm.relative.y * 0.003, -0.45, 0.35)
@@ -527,7 +530,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mb := event as InputEventMouseButton
 		match mb.button_index:
 			MOUSE_BUTTON_RIGHT:
-				_dragging_cam = mb.pressed
+				_set_looking(mb.pressed)
 				if mb.pressed and targeting >= 0:
 					cancel_targeting()
 			MOUSE_BUTTON_WHEEL_UP:
@@ -542,6 +545,28 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed(&"pause") and targeting >= 0:
 		cancel_targeting()
 		get_viewport().set_input_as_handled()
+
+
+## Right-drag to look: hide and lock the cursor so it can't slide off the window or hit the
+## screen edge, then put it back exactly where it was.
+func _set_looking(on: bool) -> void:
+	if on == _dragging_cam:
+		return
+	_dragging_cam = on
+	if on:
+		_look_from = get_viewport().get_mouse_position()
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	else:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		get_viewport().warp_mouse(_look_from)
+
+
+func _notification(what: int) -> void:
+	# Alt-Tab / losing focus mid-look must never leave the cursor locked.
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_WINDOW_FOCUS_OUT, NOTIFICATION_EXIT_TREE]:
+		if _dragging_cam:
+			_dragging_cam = false
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
 func _left_press(pos: Vector2) -> void:

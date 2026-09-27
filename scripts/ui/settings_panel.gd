@@ -33,14 +33,17 @@ func _ready() -> void:
 		var current := devices.find(AudioServer.input_device)
 		dh.add_child(Ui.option(devices, maxi(current, 0), func(i: int) -> void: AudioServer.input_device = devices[i]))
 		v.add_child(dh)
-	v.add_child(Ui.check("Fullscreen", bool(Profile.settings.get("fullscreen", false)), func(on: bool) -> void:
+	v.add_child(Ui.check("Fullscreen (F11 or Alt+Enter)", bool(Profile.settings.get("fullscreen", true)), func(on: bool) -> void:
 		Profile.set_setting("fullscreen", on)))
+	v.add_child(Ui.check("Low graphics (for laptops: smoother, less pretty)", String(Profile.settings.get("quality", "high")) == "low", func(on: bool) -> void:
+		Profile.set_setting("quality", "low" if on else "high")))
 	v.add_child(Ui.title("CONTROLS", 26, Ui.YELLOW))
 	for line in [
 		"Left click: teapot, cups, item cards, targets",
 		"Drag cards from your secret tray onto a cup (hover it or hold TAB to see them)",
 		"%s talk  -  %s emotes  -  %s throw cake  -  ENTER ready" % [Keys.label(&"push_to_talk"), Keys.label(&"emote_wheel"), Keys.label(&"throw_cake")],
-		"Right-drag to look around, wheel to lean in",
+		"Right-drag to look around (the cursor hides while you look), wheel to lean in",
+		"F11 or Alt+Enter: fullscreen / window",
 	]:
 		v.add_child(Ui.label(line, 16, Ui.CREAM, 600))
 	v.add_child(Ui.button("DONE", func() -> void: closed.emit(), Ui.MINT))

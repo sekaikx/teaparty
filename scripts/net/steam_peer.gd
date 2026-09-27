@@ -1,7 +1,11 @@
 class_name SteamPeer
 extends MultiplayerPeerExtension
-## Godot's high-level multiplayer (RPCs) over Steam P2P, using only GodotSteam's own networking
-## functions (sendP2PPacket / readP2PPacket, relayed by Valve, so no port forwarding).
+## Godot's high-level multiplayer (RPCs) over Steam, using only GodotSteam's own networking.
+## Two transports, both relayed by Valve (no port forwarding):
+##   Networking Messages (sendMessageToUser / receiveMessagesOnChannel): Valve's current API, used
+##     first when this GodotSteam has it.
+##   the older P2P API (sendP2PPacket / readP2PPacket): the fallback, and always listened to.
+## Every step is logged (Steamworks.net_log -> user://net_log.txt) so a failed join can be read.
 ## This replaces the separate steam-multiplayer-peer addon. That addon shipped its own older
 ## steam_api64.dll, and Windows can only load one, so GodotSteam failed with "Error 127".
 ##
@@ -20,6 +24,11 @@ const SEND_UNRELIABLE := 0
 const SEND_RELIABLE := 2
 const UNRELIABLE_MAX := 1150
 const STEAM_CHANNEL := 0
+## Networking Messages send flags.
+const MSG_UNRELIABLE := 0
+const MSG_RELIABLE := 8
+const MSG_AUTO_RESTART := 32
+const RESULT_OK := 1
 const TIMEOUT := 20.0
 const PING_EVERY := 2.0
 
@@ -39,6 +48,9 @@ var _heard: Dictionary = {}
 var _inbox: Array[Dictionary] = []
 var _current: Dictionary = {}
 var _ping_t := 0.0
+## Networking Messages available (and not failing)?
+var _msgs := false
+var _hello_tries := 0
 
 
 func _init(p_steam: Object = null) -> void:
@@ -73,9 +85,24 @@ func create_client(host_steam_id: int, _port: int = 0) -> Error:
 	return OK
 
 
+static func log_line(text: String) -> void:
+	var ml := Engine.get_main_loop() as SceneTree
+	var sw: Node = ml.root.get_node_or_null("Steamworks") if ml else null
+	if sw and sw.has_method(&"net_log"):
+		sw.call(&"net_log", text)
+	else:
+		print("[SteamPeer] ", text)
+
+
 func _setup() -> void:
+	_msgs = steam.has_method(&"sendMessageToUser") and steam.has_method(&"receiveMessagesOnChannel")
+	log_line("%s: transport %s, my id %s" % ["host" if _server else "client", "messages+p2p" if _msgs else "p2p", str(steam.call(&"getSteamID"))])
 	if steam.has_method(&"allowP2PPacketRelay"):
 		steam.call(&"allowP2PPacketRelay", true)
+	if steam.has_signal(&"network_messages_session_request") and not steam.is_connected(&"network_messages_session_request", _on_msg_request):
+		steam.connect(&"network_messages_session_request", _on_msg_request)
+	if steam.has_signal(&"network_messages_session_failed") and not steam.is_connected(&"network_messages_session_failed", _on_msg_failed):
+		steam.connect(&"network_messages_session_failed", _on_msg_failed)
 	if steam.has_signal(&"p2p_session_request") and not steam.is_connected(&"p2p_session_request", _on_session_request):
 		steam.connect(&"p2p_session_request", _on_session_request)
 	if steam.has_signal(&"p2p_session_connect_fail") and not steam.is_connected(&"p2p_session_connect_fail", _on_session_fail):
@@ -83,12 +110,24 @@ func _setup() -> void:
 
 
 func _on_session_request(remote_id: int) -> void:
+	log_line("p2p session request from %d" % remote_id)
 	if (_server and not _refuse) or remote_id == _host_steam:
 		steam.call(&"acceptP2PSessionWithUser", remote_id)
 
 
-func _on_session_fail(remote_id: int, _err: int = 0) -> void:
-	if _by_steam.has(remote_id):
+func _on_msg_request(remote_id: int) -> void:
+	log_line("messages session request from %d" % remote_id)
+	if (_server and not _refuse) or remote_id == _host_steam:
+		steam.call(&"acceptSessionWithUser", remote_id)
+
+
+func _on_msg_failed(reason: int, remote_id: int, _state: int = 0, debug: String = "") -> void:
+	log_line("messages session with %d failed (%d): %s" % [remote_id, reason, debug])
+
+
+func _on_session_fail(remote_id: int, err: int = 0) -> void:
+	log_line("p2p session with %d failed (error %d)" % [remote_id, err])
+	if _by_steam.has(remote_id) and _status == MultiplayerPeer.CONNECTION_CONNECTED:
 		_drop(int(_by_steam[remote_id]))
 
 
@@ -117,8 +156,13 @@ func _drop(uid: int) -> void:
 # ---------------------------------------------------------------- sending
 
 func _send_raw(steam_id: int, data: PackedByteArray, reliable: bool) -> bool:
-	var kind := SEND_RELIABLE if reliable or data.size() > UNRELIABLE_MAX else SEND_UNRELIABLE
-	return bool(steam.call(&"sendP2PPacket", steam_id, data, kind, STEAM_CHANNEL))
+	var rel := reliable or data.size() > UNRELIABLE_MAX
+	if _msgs:
+		var res := int(steam.call(&"sendMessageToUser", steam_id, data, (MSG_RELIABLE if rel else MSG_UNRELIABLE) | MSG_AUTO_RESTART, STEAM_CHANNEL))
+		if res == RESULT_OK:
+			return true
+		log_line("sendMessageToUser -> %d (result %d), trying the p2p api" % [steam_id, res])
+	return bool(steam.call(&"sendP2PPacket", steam_id, data, SEND_RELIABLE if rel else SEND_UNRELIABLE, STEAM_CHANNEL))
 
 
 func _send_ctrl(steam_id: int, cmd: int) -> void:
@@ -149,6 +193,19 @@ func _put_packet_script(buffer: PackedByteArray) -> Error:
 func _poll() -> void:
 	if steam == null or _status == MultiplayerPeer.CONNECTION_DISCONNECTED:
 		return
+	if _msgs:
+		for round_ in 16:
+			var msgs: Array = steam.call(&"receiveMessagesOnChannel", STEAM_CHANNEL, 64)
+			for m: Variant in msgs:
+				if typeof(m) != TYPE_DICTIONARY:
+					continue
+				var md: Dictionary = m
+				var data: PackedByteArray = md.get("payload", md.get("data", PackedByteArray()))
+				var from := _sender_of(md)
+				if data.size() >= 2 and from != 0:
+					_handle(from, data)
+			if msgs.size() < 64:
+				break
 	var guard := 0
 	while guard < 512:
 		guard += 1
@@ -170,7 +227,20 @@ func _poll() -> void:
 			elif _status == MultiplayerPeer.CONNECTION_CONNECTED:
 				_send_ctrl(int(_by_uid[uid]), CTRL_PING)
 			elif not _server:
+				_hello_tries += 1
+				log_line("still calling the host %d (try %d)" % [_host_steam, _hello_tries])
 				_send_ctrl(_host_steam, CTRL_HELLO)   # still connecting: knock again
+
+
+## The sender of a Networking Messages message, whatever this GodotSteam version calls it.
+static func _sender_of(m: Dictionary) -> int:
+	for key in ["remote_steam_id", "steam_id", "sender", "identity_peer"]:
+		if m.has(key) and (typeof(m[key]) == TYPE_INT):
+			return int(m[key])
+	var ident := str(m.get("identity", m.get("identity_peer", "")))
+	# "steamid:7656119..." (or a bare number)
+	var digits := ident.get_slice(":", 1) if ident.contains(":") else ident
+	return int(digits) if digits.is_valid_int() else 0
 
 
 static func get_process_delta() -> float:
@@ -187,10 +257,12 @@ func _handle(from: int, data: PackedByteArray) -> void:
 			CTRL_HELLO:
 				if _server and not _refuse:
 					if uid == 0:
+						log_line("hello from %d: welcome" % from)
 						_add(uid_for(from), from)
 					_send_ctrl(from, CTRL_WELCOME)
 			CTRL_WELCOME:
 				if not _server and from == _host_steam and _status == MultiplayerPeer.CONNECTION_CONNECTING:
+					log_line("the host let us in")
 					_status = MultiplayerPeer.CONNECTION_CONNECTED
 					peer_connected.emit(1)
 			CTRL_BYE:

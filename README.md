@@ -78,10 +78,17 @@ One-time setup (everyone who plays):
 3. Run the game. Under **PLAY ONLINE** you should see **STEAM: CONNECTED AS <your name>**.
 
 Then:
-- **HOST FOR FRIENDS**, then press **INVITE FRIENDS** in the lobby (the Steam overlay opens), or
-  send your friends the **party code** (use the COPY button).
-- Friends accept the invite in Steam, or paste the code into **JOIN**.
-- **HOST PUBLIC** lists your party under **FIND PUBLIC PARTIES** for anyone running Tea Party.
+- **HOST FOR FRIENDS**, then press **INVITE FRIENDS** in the lobby: an in-game list of your Steam
+  friends (the ones already in Tea Party at the top) with an **INVITE** button each. No Steam overlay
+  needed. Or **COPY** the party code and paste it on Discord.
+- If your friend has Tea Party open, a **"<you> INVITED YOU! JOIN"** popup appears in their game. The
+  invite also shows up in their Steam chat.
+- Anyone with the code can paste it into **JOIN** (friend or not). **HOST PUBLIC** also lists the
+  party under **FIND PUBLIC PARTIES**.
+- Joining shows what it's doing ("Calling the host..."). If the host doesn't answer within about 20
+  seconds you get the reason instead of an endless "Joining...". The **LOG** button shows (and copies)
+  the connection log. It's also saved as `net_log.txt` in the game's data folder
+  (`%APPDATA%\Godot\app_userdata\Tea Party` on Windows).
 
 `steam_appid.txt` (containing `480`) sits in the project root for editor runs. An exported game
 writes its own copy next to the .exe on first launch (or copy it there yourself if that folder is
@@ -106,6 +113,16 @@ Delete that folder (and the hidden `.godot` folder, so Godot forgets it), keep `
 and reopen the project.
 
 Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
+
+### Display and controls troubleshooting
+
+- The game starts **fullscreen** at your desktop resolution. **F11** or **Alt+Enter** switches to a
+  window (80% of the screen, centred) and back. It's also in Settings.
+- **Settings > Low graphics** for laptops (no anti-aliasing, 75% 3D resolution with FSR, smaller shadow
+  maps). The game offers it by itself if it runs under 30 FPS.
+- **Right-drag to look around**: the cursor hides and locks while you look, then comes back where it
+  was, so it can't slide off the window or get stuck at the screen edge.
+- Touchpad? Click a card, then click the cup (no dragging needed). Dragging still works too.
 
 ## Controls
 
@@ -172,7 +189,9 @@ godot --headless --path . -- --qa --solo --speed=8                     # a full 
 godot --headless --path . -- --qa --host --speed=6 &                   # host + client over ENet
 godot --headless --path . -- --qa --join=127.0.0.1 --speed=6
 godot --headless --path . -- --qa --tool=res://tools/test_voice_codec.gd
-godot --headless --path . -- --qa --tool=res://tools/steam_peer_test.gd  # SteamPeer vs a fake Steam: join, RPCs, relay, leave
+godot --headless --path . -- --qa --tool=res://tools/steam_peer_test.gd  # SteamPeer vs fake Steam (P2P and Networking Messages)
+godot --headless --path . -- --qa --fake-steam=7 --tool=res://tools/join_timeout_test.gd   # a silent host gives a clear error
+xvfb-run -a -s "-screen 0 1920x1080x24" godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/os_mouse_test.gd  # real OS clicks (xdotool)
 godot --headless --path . -- --qa --steam-host --fake-steam=1 --speed=6 &   # a full match over SteamPeer (UDP stand-in for Steam)
 godot --headless --path . -- --qa --steam-join=1 --fake-steam=2 --speed=6
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --solo --shots=/tmp/shots          # every phase

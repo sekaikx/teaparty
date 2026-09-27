@@ -11,6 +11,7 @@ var _hud: GameHud
 var _toast: PanelContainer
 var _toast_label: Label
 var _toast_tw: Tween
+var _toast_layer: CanvasLayer
 
 
 func _ready() -> void:
@@ -32,6 +33,8 @@ func _ready() -> void:
 	_toast.visible = false
 	toast_layer.add_child(_toast)
 	Ui.pin(_toast, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -100))
+	_toast_layer = toast_layer
+	Steamworks.invited.connect(_on_invited)
 	Net.joined_lobby.connect(_show_lobby)
 	Net.left_lobby.connect(func(reason: String) -> void:
 		_show_title()
@@ -50,6 +53,39 @@ func _ready() -> void:
 			if a.begins_with("--tool="):
 				tool = a.get_slice("=", 1)
 		add_child((load(tool) as GDScript).new())
+
+
+## F11 or Alt+Enter: fullscreen <-> window, from anywhere.
+func _unhandled_key_input(event: InputEvent) -> void:
+	var k := event as InputEventKey
+	if k and k.pressed and not k.echo and (k.keycode == KEY_F11 or (k.keycode == KEY_ENTER and k.alt_pressed)):
+		var fs := DisplayServer.window_get_mode() in [DisplayServer.WINDOW_MODE_FULLSCREEN, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN]
+		Profile.set_setting("fullscreen", not fs)
+		get_viewport().set_input_as_handled()
+
+
+## A Steam friend invited you: a popup with JOIN (works from anywhere, even mid-game).
+func _on_invited(from_name: String, lobby: int) -> void:
+	var p := Ui.panel(Ui.SKY, 22, Vector4(20, 14, 20, 16))
+	var v := Ui.vbox(8)
+	p.add_child(v)
+	v.add_child(Ui.title("%s INVITED YOU!" % from_name.to_upper(), 28, Ui.CREAM))
+	v.add_child(Ui.label("Join their tea party?" + (" (You'll leave this one.)" if Net.in_lobby else ""), 17, Ui.INK, 700))
+	var h := Ui.hbox(10)
+	v.add_child(h)
+	h.add_child(Ui.button("JOIN", func() -> void:
+		p.queue_free()
+		if Net.in_lobby or Session.running:
+			Net.leave()
+		Steamworks.join_lobby(lobby), Ui.MINT, 22, Vector2(140, 54)))
+	h.add_child(Ui.button("NOT NOW", func() -> void: p.queue_free(), Ui.PLUM_LIGHT, 18, Vector2(140, 54)))
+	_toast_layer.add_child(p)
+	Ui.pin(p, Vector2(1, 0), Vector2(1, 0), Vector2(-20, 250))
+	Ui.pop_in(p)
+	Sfx.play(&"bell", -2.0)
+	get_tree().create_timer(30.0).timeout.connect(func() -> void:
+		if is_instance_valid(p):
+			p.queue_free())
 
 
 func toast(text: String, seconds: float = 4.0) -> void:

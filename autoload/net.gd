@@ -12,6 +12,8 @@ signal rules_changed
 signal joined_lobby
 signal connection_failed(reason: String)
 signal left_lobby(reason: String)
+## What a Steam join is doing right now ("Calling the host..."), for the online panel.
+signal join_progress(text: String)
 
 const DEFAULT_PORT := 24565
 const MAX_PEERS := 7
@@ -30,7 +32,8 @@ func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected)
-	multiplayer.connection_failed.connect(func() -> void: _fail("Could not reach that table."))
+	multiplayer.connection_failed.connect(func() -> void:
+		_fail(STEAM_NO_ANSWER if is_steam else "Could not reach that table."))
 	multiplayer.server_disconnected.connect(func() -> void: leave("The host closed the table."))
 	_bot_rng.randomize()
 	Steamworks.lobby_entered.connect(_on_steam_lobby_entered)
@@ -56,14 +59,21 @@ func host_steam(public: bool) -> Error:
 
 
 var joining := false
+var _join_serial := 0
+const JOIN_TIMEOUT := 25.0
+const STEAM_NO_ANSWER := "The host didn't answer over Steam. Check: the host is still in the lobby, both of you have Steam open (and are not in Offline Mode), and the host's firewall allows Tea Party. Then try the code again. (Details: net_log.txt in the game's data folder.)"
 
 
 func join_steam_pending() -> void:
+	if multiplayer.multiplayer_peer and not is_solo:
+		leave()
 	joining = true
+	join_progress.emit("Joining the Steam lobby...")
 
 
 func _on_steam_lobby_entered(_lobby: int, owner: int) -> void:
 	_reset()
+	joining = true
 	var peer := Steamworks.make_peer()
 	var err: Error = peer.call(&"create_client", owner, 0)
 	if err != OK:
@@ -71,6 +81,16 @@ func _on_steam_lobby_entered(_lobby: int, owner: int) -> void:
 		return
 	multiplayer.multiplayer_peer = peer
 	is_steam = true
+	join_progress.emit("In the lobby. Calling the host over Steam's relay...")
+	# If the host never answers, say so instead of "Joining..." forever.
+	_join_serial += 1
+	var serial := _join_serial
+	get_tree().create_timer(JOIN_TIMEOUT).timeout.connect(func() -> void:
+		if serial == _join_serial and joining and not in_lobby:
+			_fail(STEAM_NO_ANSWER))
+	get_tree().create_timer(8.0).timeout.connect(func() -> void:
+		if serial == _join_serial and joining and not in_lobby:
+			join_progress.emit("Still calling the host... (Steam can take a few seconds the first time)"))
 
 
 ## The code friends type to join (the Steam lobby id).
@@ -227,6 +247,9 @@ func _set_roster(r: Dictionary) -> void:
 	roster = r
 	if not in_lobby:
 		in_lobby = true
+		joining = false
+		if is_steam:
+			Steamworks.net_log("in the host's lobby")
 		joined_lobby.emit()
 	roster_changed.emit()
 

@@ -43,7 +43,7 @@ func _ready() -> void:
 		_code = Ui.line_edit("", "Party code (numbers)", 300)
 		jh.add_child(_code)
 		jh.add_child(Ui.button("JOIN", func() -> void:
-			var c := _code.text.strip_edges()
+			var c := _code.text.strip_edges().replace(" ", "")
 			if c.is_valid_int():
 				_status.text = "Joining..."
 				Steamworks.join_lobby(int(c))
@@ -52,13 +52,17 @@ func _ready() -> void:
 		jh.add_child(Ui.button("FIND PUBLIC PARTIES", func() -> void:
 			_status.text = "Looking..."
 			Steamworks.refresh_lobbies(), Ui.LILAC, 18, Vector2(0, 48)))
+		jh.add_child(Ui.button("LOG", func() -> void:
+			var lines := Steamworks.log_lines.slice(maxi(0, Steamworks.log_lines.size() - 12))
+			DisplayServer.clipboard_set("\n".join(Steamworks.log_lines))
+			_status.text = "Connection log (copied to your clipboard):\n" + "\n".join(lines), Ui.PLUM_LIGHT, 16, Vector2(70, 48)))
 		_list = Ui.vbox(6)
 		sv.add_child(_list)
 		Steamworks.lobby_list.connect(_on_list)
 	else:
 		sh.add_child(Ui.chip("NOT CONNECTED", Ui.PINK, Ui.CREAM, 15))
 		sv.add_child(Ui.wrap(Ui.label(Steamworks.reason, 17, Ui.CREAM), 760))
-		sv.add_child(Ui.wrap(Ui.label("Setup: 1) have the Steam app open and logged in, 2) in the Godot editor open AssetLib, search \"GodotSteam\" and install \"GodotSteam GDExtension 4.4+\", 3) restart the editor. The game uses Steam's free test app Spacewar (480), so nothing needs publishing.", 15, Ui.MUTED), 760))
+		sv.add_child(Ui.wrap(Ui.label("Open the Steam app, log in (not Offline Mode), then restart Tea Party. The game uses Steam's free test app Spacewar (480), so Steam shows you as playing Spacewar.", 15, Ui.MUTED), 760))
 
 	var lan := Ui.card(Ui.PLUM_DARK, Vector4(18, 12, 18, 14))
 	v.add_child(lan)
@@ -81,6 +85,9 @@ func _ready() -> void:
 	Net.connection_failed.connect(func(reason: String) -> void:
 		if is_instance_valid(_status):
 			_status.text = reason)
+	Net.join_progress.connect(func(text: String) -> void:
+		if is_instance_valid(_status):
+			_status.text = text)
 
 
 func _host(public: bool) -> void:
