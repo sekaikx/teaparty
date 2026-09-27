@@ -1,11 +1,11 @@
 # Tea Party
 
-A poisoned tea party for 3 to 8 friends. You're chunky, floppy little aristocrats with googly
-eyes. You pour tea for your neighbour, slip something into it, and lie about it. Then everyone
-raises their cup for the toast, and that's when the cakes fly: **hit a raised cup and it spills**
-(that could save a life or waste an antidote), **hit a face and they ragdoll off their chair**.
-Then everyone drinks. Someone turns green and collapses, and the game says who poisoned them. The dead
-come back as ghosts with cakes of their own. Made in **Godot 4.7** (Forward+).
+**Murder at Teatime**: an Among Us-style party game at a tea table, for 4 to 8 friends. One of
+you is secretly the **POISONER**. Every round the lights go out and everyone pours something into
+someone's cup; you only glimpse one pour. The toast: somebody falls. Then the meeting: *"Where
+did YOU pour?" "I saw Clara pour into Ada's cup!" "That's a lie, I poured sugar into Baron's!"*
+Vote someone out and find out if you were right. Chunky ragdoll guests, cake throwing, clip
+banners. Made in **Godot 4.7** (Forward+).
 
 ## Quick start
 
@@ -19,36 +19,51 @@ match, **PLAY AGAIN!** starts the next one right away.
 
 ## How it plays
 
-| Step | What you do |
+**Roles.** One guest is the secret **Poisoner** (two with 8 guests; they know each other). Everyone
+else is an innocent **Guest**. Guests win when every poisoner has been voted out (or poisoned).
+Poisoners win when there are as many poisoners as guests left.
+
+| Step | What happens |
 |---|---|
-| **1 POUR** | Click **your teapot**, then click the **glowing cup** of the guest on your left. Then **drag one card** from your secret tray (bottom left; hover it or hold Tab to see it) into that cup. |
-| **2 ITEMS** | **Everyone picks at the same time.** Click an item card (bottom right), then its target(s). **Swap** two cups, **Sniff** a cup for poison (sugar hides it), **Force a Toast** (that guest drinks right now), **Peek** at a guest's cards. Or **PASS**. Then the items go off one by one: sniffs and peeks first, then swaps, then toasts. |
-| **3 TALK** | Hold **V** to talk, **Q** for emotes. The coach reminds you who poured your cup and what you put in. Press **READY TO DRINK**. |
-| **4 TOAST** | Everyone stands and raises their cup for 5 seconds. **F** throws a cake at the point under your mouse: hitting a **cup** spills it (nobody drinks it), hitting a **face** knocks that guest down and makes them drop their cup. Then everyone drinks. More poison than antidote means you're dead, and a sign over your body names the poisoner. |
+| **1 SERVE (lights out)** | Click **your teapot**, click **any other guest's cup**, then **drag one card** from your secret tray into it. The poisoner holds **Poison**. Guests hold **Plain** and **Sugar**, and one guest gets the **Antidote** (it cancels a poison in the same cup). Nobody can see where anyone pours. |
+| **The glimpse** | When the lights come back, most guests learn ONE true thing: *"In the dark you SAW Baron pour into Ada's cup."* (Sometimes the candle flickers and you saw nothing.) It's in your **WHAT YOU KNOW** panel. |
+| **2 ITEMS** | Everyone picks at once: **Sniff** a cup (is it poisoned right now? sugar hides it), **Watch** a guest (you learn whose cup they poured into), **Swap** two cups (everyone sees it). Or pass. |
+| **3 TOAST** | Everyone raises their cup for 5 seconds. Think yours is poisoned? Press **F** to throw a cake at it and it spills. Hit a face and they drop their cup. Then everyone drinks. The poisoned fall, and **the game doesn't say who poured it**. You only see what was in the deadly cup. |
+| **4 MEETING** | Talk (Discord, or hold **V**). Say where you poured and what you saw. Players without voice use the **SAY** bar (quick buttons for the truth, or build a lie). The **TALK ABOUT THIS** box suggests questions. Press **READY TO VOTE**. |
+| **5 VOTE** | Click who you think it is, or **SKIP**. Most votes gets **thrown out** (ragdoll-yeeted), and everyone sees if they were the poisoner. A tie, or most skipping, throws nobody out. |
 
-### Playing on a Discord call
+### A round on a Discord call (6 friends: Ada, Baron, Clara, Dev, Eli, Finn; Finn is the poisoner)
 
-Just talk in Discord; you don't need the in-game voice (V). Everyone hears everyone, the dead included,
-and that's on purpose. **Ghosts see inside every cup, and every ghost gets a secret GRUDGE**: a
-living guest they're paid to get killed. So when your dead friend shouts "Don't drink it!", they might
-be saving you or they might be getting their revenge. In the talk phase, the **TALK ABOUT THIS** box
-turns what everyone saw into prompts ("Baron SNIFFED Ada's cup. Make him say what he smelled.").
+1. **Serve.** Finn pours POISON into Ada's cup. Baron pours sugar into Clara's. Clara pours plain into
+   Dev's. Dev pours the ANTIDOTE into Eli's. Eli pours plain into Ada's. Ada pours sugar into Finn's.
+2. **Glimpses.** Baron saw *Eli pour into Ada's cup*. Dev saw *Finn pour into Ada's cup*. Clara saw
+   nothing. Eli saw *Baron pour into Clara's*.
+3. **Items.** Clara WATCHES Finn: *Finn poured into Ada's cup*. Now two people know.
+4. **Toast.** Ada drinks and falls. The reveal: *Ada's cup had POISON + PLAIN*. Ada's a ghost
+   now and has to stay quiet.
+5. **Meeting.**
+   - **Baron:** "I saw ELI pour into Ada's cup!"
+   - **Eli:** "Yeah, I did, but it was PLAIN. There was plain in there, check the reveal. So someone else put the poison in."
+   - **Finn (lying):** "I poured sugar into Baron's cup."
+   - **Baron:** "No you didn't, nobody poured into mine... or did they?"
+   - **Dev:** "I SAW Finn pour into ADA's cup."
+   - **Clara:** "I WATCHED Finn. Ada's cup. Finn is lying."
+   - **Finn:** "Dev and Clara are working together!"
+6. **Vote.** Four votes on Finn: **FINN WAS THE POISONER!** Guests win.
 
-**Clip moments.** The game puts a big banner over the funny beats: *DOUBLE KILL*, *BLOODBATH*,
-*OWN GOAL* (you drank your own poison), *SELF-SWAP* (you swapped the deadly cup to yourself),
-*CAKE SAVE* / *GHOST SAVE*, *OOPS! SAVED THEIR GRUDGE*, and *REVENGE FROM BEYOND*. The poisoned
-drop one at a time, and a sign over each body names the killer.
+That's the game: everyone has an alibi (where they poured), some people have a witness (the
+glimpse), and the poisoner has to invent a story that fits. Swaps, the antidote and cakes make
+the story messier. And if the poisoner had poured into Baron's cup, Baron would be dead and Dev's
+word would be the only evidence.
 
-Cards: **Poison** kills. **Antidote** cancels one poison in the same cup. **Sugar** makes a sniff
-useless. **Plain** does nothing. Every round has more poison, and from round 5 the pot itself is laced.
-**Ghosts** can see inside every cup. They can rattle cups to warn or trick the living, and they get
-2 cakes per round of their own, so during the toast a ghost can save a friend or knock the antidote out of an
-enemy's hand. Only other ghosts can hear them. The **last guest alive wins**, and the results screen
-gives out awards (Master Poisoner, Vengeful Spirit, Sharpshooter, Guardian Angel, Butterfingers, Cake Magnet...)
-that pay extra coins.
+**Ghosts** (the dead and the thrown-out) keep playing for chaos: they rattle cups and throw ghost
+cakes. Among Us rules: **ghosts don't talk to the living** (mute yourself on Discord).
 
-Modes: **Classic**, **Teams** (Earl Grey vs Darjeeling), and **The Butler** (a hidden player who
-can secretly spike any cup). Rooms: **the Parlour**, **Garden Party** and **Royal Banquet** (8 seats).
+**Clip moments.** Big banners for the funny beats: *CAUGHT THE POISONER!*, *WRONG GUEST!*,
+*DOUBLE KILL*, *ANTIDOTE SAVE*, *CAKE SAVE*, *OWN GOAL* (the poisoner drank their own poison
+after a swap), *SELF-SWAP*. The results screen gives out awards (Master Poisoner, Detective,
+Sharpshooter, Guardian Angel, Cake Magnet...) that pay extra coins. Rooms: **the Parlour**,
+**Garden Party** and **Royal Banquet** (8 seats).
 
 ## Playing online with Steam (Spacewar, App ID 480)
 
@@ -57,10 +72,9 @@ Valve's relay network, so nobody needs to forward ports.
 
 One-time setup (everyone who plays):
 1. Have the **Steam** app running and log in.
-2. In the Godot editor, open the **AssetLib** tab, search **GodotSteam**, and install
-   **"GodotSteam GDExtension 4.4+"** (it installs into `addons/godotsteam`). Restart the editor.
-   That's the only Steam addon the game needs. The game's traffic runs through GodotSteam's own
-   P2P functions (`scripts/net/steam_peer.gd`), so there's exactly one `steam_api64.dll`.
+2. Nothing to install: **GodotSteam 4.22.1** is already in `addons/godotsteam`. It's the only Steam
+   addon the game needs. The game's traffic runs through GodotSteam's own P2P functions
+   (`scripts/net/steam_peer.gd`), so there's exactly one `steam_api64.dll`.
 3. Run the game. Under **PLAY ONLINE** you should see **STEAM: CONNECTED AS <your name>**.
 
 Then:
@@ -97,13 +111,13 @@ Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
 
 | Input | Action |
 |---|---|
-| Left click | Teapot, cups, item cards, targets. As a ghost: rattle a cup |
-| Drag a card | Drop an ingredient (or the butler's vial) into a cup |
+| Left click | Teapot, any cup, item cards, targets, vote buttons. As a ghost: rattle a cup |
+| Drag a card | Pour an ingredient into the cup you served |
 | Tab (hold) | Uncover your secret tray |
 | V (hold) | Push to talk |
 | Q / middle mouse (hold) | Emote wheel |
-| F | Throw a cupcake at the point under the mouse (hit raised cups during the toast!) |
-| Enter | Ready to drink |
+| F | Throw a cupcake at the point under the mouse (hit your raised cup at the toast to spill it) |
+| Enter | Ready to vote (in the meeting) |
 | Right-drag / wheel | Look around / lean in |
 | Esc | Pause menu (also cancels an item) |
 
@@ -152,7 +166,7 @@ tools/         tests, QA harness, screenshot tools, audio synthesiser
 ## Tests and QA
 
 ```
-godot --headless --script res://tools/test_rules.gd                    # rules + 1200 bot matches
+godot --headless --script res://tools/test_rules.gd                    # rules + 1500 bot matches (prints win balance)
 godot --headless --path . -- --qa --tool=res://tools/input_test.gd     # real mouse input: teapot, drag card, items, ready
 godot --headless --path . -- --qa --solo --speed=8                     # a full match, local seat auto-played
 godot --headless --path . -- --qa --host --speed=6 &                   # host + client over ENet

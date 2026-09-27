@@ -29,9 +29,9 @@ func _run() -> void:
 	await get_tree().create_timer(0.5).timeout
 	var table := get_tree().current_scene.get_node("World") as TableView
 	var cam := table.camera
-	# 1. Click the teapot, then click the target cup.
+	# 1. Click the teapot, then click ANY other guest's cup.
 	var pot := table.pots[Session.my_seat]
-	var target := table.pour_target()
+	var target := (Session.my_seat + 2) % Session.seat_count()
 	var cup := table.cup_at_seat(target)
 	var pp := cam.unproject_position(pot.global_position + Vector3(0, 0.2, 0))
 	await _click(pp)
@@ -41,6 +41,7 @@ func _run() -> void:
 	await _click(cp)
 	await get_tree().create_timer(3.0).timeout
 	_check("tea poured", table.tea_poured)
+	_check("served the cup I clicked", table.serve_to == target)
 	# 2. Drag the first tray card onto the cup.
 	var hud := _find(get_tree().root, GameHud) as GameHud
 	var tray: HBoxContainer = hud.get("_tray")
@@ -89,15 +90,46 @@ func _run() -> void:
 			_check("swap moved my cup", int(Session.cup_of(Session.my_seat)["id"]) != before_a)
 	else:
 		print("INPUT SKIP item turn (not reached)")
-	# 4. Ready up with the button.
+	# 4. The meeting: say something true with a quick button, then ready up.
 	while Session.phase != Defs.Phase.TALK and Session.running:
 		await get_tree().process_frame
-	await get_tree().create_timer(0.4).timeout
-	if Session.am_alive():
+	await get_tree().create_timer(0.6).timeout
+	if Session.am_alive() and Session.phase == Defs.Phase.TALK:
+		var said := [false]
+		Session.game_event.connect(func(ev: Dictionary) -> void:
+			if ev.get("type", "") == "claim" and int(ev["seat"]) == Session.my_seat:
+				said[0] = true)
+		var claims: PanelContainer = hud.get("_claims")
+		_check("claim bar shown", claims.visible)
+		var quick: Button = null
+		for c in claims.get_child(0).get_child(0).get_children():
+			if c is Button:
+				quick = c
+				break
+		_check("a quick claim button", quick != null)
+		if quick:
+			await _click(quick.get_global_rect().get_center())
+			await get_tree().create_timer(0.4).timeout
+			_check("the claim was said", said[0])
 		var ready_btn: Button = hud.get("_ready")
 		await _click(ready_btn.get_global_rect().get_center())
 		await get_tree().create_timer(0.4).timeout
 		_check("ready button", bool(Session.seat_info(Session.my_seat).get("ready", false)))
+		# 5. Vote with the panel.
+		var w2 := 0.0
+		while Session.phase != Defs.Phase.VOTE and w2 < 60.0:
+			await get_tree().process_frame
+			w2 += get_process_delta_time()
+		await get_tree().create_timer(0.4).timeout
+		var vote: PanelContainer = hud.get("_vote")
+		_check("vote panel shown", vote.visible)
+		var grid: GridContainer = hud.get("_vote_box")
+		if grid.get_child_count() > 0:
+			await _click((grid.get_child(0) as Control).get_global_rect().get_center())
+			await get_tree().create_timer(0.4).timeout
+			_check("voted with a click", bool(Session.seat_info(Session.my_seat).get("voted", false)))
+	else:
+		print("INPUT SKIP meeting (I died at the toast)")
 	print("INPUT DONE fails=%d" % _fails)
 	get_tree().quit(1 if _fails > 0 else 0)
 

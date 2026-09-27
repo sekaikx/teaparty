@@ -1,15 +1,29 @@
 class_name TeaRules
 extends RefCounted
-## The whole game as pure data: seats, hands, cups, items and win conditions. No nodes, no
-## networking; Session (the host) drives it and tools/test_rules.gd exercises it headless.
+## The whole game as pure data: seats, roles, hands, cups, evidence, votes and win conditions.
+## No nodes, no networking; Session (the host) drives it and tools/test_rules.gd exercises it.
 ##
-## Seats are fixed places around the table (dead guests keep their seat and become ghosts).
-## Cups are objects that move: `cup_at[seat]` is the cup in front of a seat, so a swap just
-## exchanges two entries. Each cup holds a list of {k: Ingredient, by: seat} (by -1 = the laced pot).
-## A drinker collapses when their cup holds more poison than antidote.
+## "Murder at Teatime", a hidden-killer game like Among Us, around a tea table:
+##   SERVE (in the dark)  every guest secretly pours one card into ANY other guest's cup.
+##                        The secret POISONER(s) hold poison. Innocents hold sugar, plain tea and,
+##                        for one lucky guest, an antidote.
+##   You glimpse one pour Each guest privately sees one other guest's pour ("Baron poured into
+##                        Ada's cup"). That's the evidence everyone argues about.
+##   ITEMS                SNIFF a cup (poison?), WATCH a guest (whose cup did they pour into?),
+##                        SWAP two cups.
+##   THE TOAST            Cups up. Cakes can knock a cup away. Everyone drinks; the poisoned fall.
+##   THE MEETING          Talk: alibis ("I poured sugar into Clara's"), sightings, accusations.
+##   THE VOTE             Most votes gets thrown out of the party (and their role is shown).
+## Innocents win when every poisoner is out. Poisoners win when they're as many as the innocents.
+##
+## Seats are fixed places around the table (the dead stay seated as ghosts). Cups move:
+## `cup_at[seat]` is the cup in front of a seat, so a swap exchanges two entries. Each cup holds a
+## list of {k: Ingredient, by: seat}. A drinker falls when their cup holds more poison than antidote.
 
 const I := Defs.Ingredient
 const IT := Defs.Item
+const POISONER := &"poisoner"
+const GUEST := &"guest"
 
 var rng := RandomNumberGenerator.new()
 var rules: Dictionary = Defs.default_rules()
@@ -17,11 +31,14 @@ var seats: Array[Dictionary] = []
 var cups: Dictionary = {}
 var cup_at: Array[int] = []
 var round_no := 0
+## Kept for older callers; the pot is never laced in this mode.
 var laced := false
-## Drinks this round in order: {seat, cup, contents, died, toast}.
+## Drinks this round in order: {seat, cup, contents, died, ...}.
 var drinks: Array[Dictionary] = []
-## Seats that fell in the most recent drinking (a toast or the table drink).
+## Seats that fell in the most recent drinking (or the vote).
 var fallen_last: Array[int] = []
+## seat -> target seat (or -1 = skip) for the current vote.
+var votes: Dictionary = {}
 
 
 func setup(players: Array, p_rules: Dictionary, seed_value: int) -> void:
@@ -38,20 +55,30 @@ func setup(players: Array, p_rules: Dictionary, seed_value: int) -> void:
 		seats.append({
 			"id": int(p.get("id", i + 1)), "name": String(p.get("name", "Guest")),
 			"bot": bool(p.get("bot", false)), "cos": p.get("cos", {}), "level": int(p.get("level", 1)),
-			"alive": true, "team": (i % 2) if mode() == &"teams" else -1, "role": &"guest",
-			"hand": [], "items": [], "poured": false, "dropped": -1, "spiked": false,
-			"item_done": false, "ready": false, "rattles": 0, "died_round": -1,
+			"alive": true, "team": -1, "role": GUEST,
+			"hand": [], "items": [], "poured": false, "dropped": -1, "served": -1,
+			"item_done": false, "ready": false, "voted": false, "rattles": 0, "died_round": -1,
+			"ejected": false, "evidence": [],
 			"kills": 0, "rounds_survived": 0, "sniffs": 0, "toasts": 0, "swaps": 0, "peeks": 0,
-			"rattles_used": 0, "grudge": -1, "grudges_paid": 0,
+			"rattles_used": 0, "good_votes": 0,
 		})
 		cups[i] = {"id": i, "owner": i, "contents": [], "tea": false, "drunk": false}
 		cup_at.append(i)
-	if mode() == &"butler" and seats.size() >= 3:
-		seats[rng.randi_range(0, seats.size() - 1)]["role"] = &"butler"
-	# Starting items.
-	for s in seats:
-		for n in maxi(1, int(rules["items_per_round"])):
-			_give_item(s)
+	# The secret poisoner(s).
+	var order: Array = range(seats.size())
+	_shuffle(order)
+	for n in mini(poisoner_count(seats.size()), seats.size()):
+		seats[order[n]]["role"] = POISONER
+
+
+## Tuned in tools/test_rules.gd so the poisoner(s) win roughly 40-50% against bots: bigger
+## tables give more time to catch one poisoner (fewer glimpses), but two poisoners need more.
+static func glimpse_for(players: int) -> float:
+	return {3: 0.7, 4: 0.6, 5: 0.5, 6: 0.4, 7: 0.33}.get(players, 0.75) as float
+
+
+static func poisoner_count(players: int) -> int:
+	return 2 if players >= 8 else 1
 
 
 func mode() -> StringName:
@@ -74,6 +101,10 @@ func is_alive(seat: int) -> bool:
 	return seat >= 0 and seat < seats.size() and bool(seats[seat]["alive"])
 
 
+func is_poisoner(seat: int) -> bool:
+	return seat >= 0 and seat < seats.size() and seats[seat]["role"] == POISONER
+
+
 func seat_of_id(id: int) -> int:
 	for i in seats.size():
 		if int(seats[i]["id"]) == id:
@@ -81,73 +112,68 @@ func seat_of_id(id: int) -> int:
 	return -1
 
 
-func butler_seat() -> int:
+func poisoner_seats() -> Array[int]:
+	var out: Array[int] = []
 	for i in seats.size():
-		if seats[i]["role"] == &"butler":
-			return i
-	return -1
+		if is_poisoner(i):
+			out.append(i)
+	return out
 
 
 # ---------------------------------------------------------------- rounds and dealing
 
 func start_round() -> void:
 	round_no += 1
-	laced = round_no >= int(rules["laced_round"])
 	drinks.clear()
 	fallen_last.clear()
+	votes.clear()
 	for i in seats.size():
 		var s := seats[i]
 		s["hand"] = []
 		s["poured"] = false
 		s["dropped"] = -1
-		s["spiked"] = false
+		s["served"] = -1
 		s["item_done"] = false
 		s["ready"] = false
+		s["voted"] = false
+		s["evidence"] = []
 		s["rattles"] = int(rules["ghost_rattles"]) if not s["alive"] else 0
-	# Fresh cups in front of every living guest; the ones on the table stay where they were.
 	for seat in seats.size():
 		var cup: Dictionary = cups[cup_at[seat]]
-		cup["contents"] = [{"k": I.POISON, "by": -1}] if laced and seats[seat]["alive"] else []
+		cup["contents"] = []
 		cup["tea"] = false
 		cup["drunk"] = not seats[seat]["alive"]
 		cup["swapped_by"] = -1
 		cup["spilled"] = false
 		cup["spilled_by"] = -1
+	# Hands: poisoners get poison plus two harmless cards (they may choose not to kill);
+	# innocents get harmless cards, and one random innocent gets the antidote.
 	var alive := alive_seats()
-	var hand_size := clampi(int(rules["hand_size"]), 1, 5)
-	var deck := build_deck(alive.size() * hand_size)
+	var innocents: Array[int] = []
+	# Poisoners share ONE vial a round (like a kill cooldown): it goes to one of the living ones.
+	var living_p: Array[int] = []
 	for seat in alive:
-		var hand: Array = []
-		for n in hand_size:
-			hand.append(deck.pop_back())
-		seats[seat]["hand"] = hand
-	var b := butler_seat()
-	if b >= 0 and is_alive(b) and not (seats[b]["hand"] as Array).has(I.POISON):
-		(seats[b]["hand"] as Array)[0] = I.POISON
-	if round_no > 1:
-		for seat in alive:
-			for n in int(rules["items_per_round"]):
-				_give_item(seats[seat])
-
-
-## The ingredient deck for one round: poison rises each round, antidotes thin out.
-func build_deck(n: int) -> Array:
-	var scale := float(rules.get("poison_scale", 1.0))
-	var poison := maxi(1, roundi(n * clampf((0.12 + 0.08 * (round_no - 1)) * scale, 0.05, 0.65)))
-	var antidote := maxi(1, roundi(n * clampf(0.24 - 0.025 * (round_no - 1), 0.08, 0.24)))
-	var sugar := roundi(n * 0.2)
-	var deck: Array = []
-	for k in poison:
-		deck.append(I.POISON)
-	for k in antidote:
-		deck.append(I.ANTIDOTE)
-	for k in sugar:
-		deck.append(I.SUGAR)
-	while deck.size() < n:
-		deck.append(I.NOTHING)
-	deck.resize(n)
-	_shuffle(deck)
-	return deck
+		if is_poisoner(seat):
+			living_p.append(seat)
+	var vial := living_p[rng.randi_range(0, living_p.size() - 1)] if not living_p.is_empty() else -1
+	for seat in alive:
+		if is_poisoner(seat):
+			seats[seat]["hand"] = [I.POISON, I.SUGAR, I.NOTHING] if seat == vial else [I.SUGAR, I.NOTHING, I.NOTHING]
+		else:
+			innocents.append(seat)
+			var hand: Array = []
+			for n in 3:
+				hand.append(I.SUGAR if rng.randf() < 0.4 else I.NOTHING)
+			seats[seat]["hand"] = hand
+	# One antidote a round (two at a big table with two poisoners).
+	_shuffle(innocents)
+	for n in mini(2 if poisoner_count(seats.size()) >= 2 else 1, innocents.size()):
+		(seats[innocents[n]]["hand"] as Array)[0] = I.ANTIDOTE
+	for seat in alive:
+		(seats[seat]["hand"] as Array).sort()
+		seats[seat]["items"] = []
+		for n in int(rules["items_per_round"]):
+			_give_item(seats[seat])
 
 
 func _give_item(s: Dictionary) -> void:
@@ -168,58 +194,51 @@ func _shuffle(a: Array) -> void:
 		a[j] = t
 
 
-# ---------------------------------------------------------------- pour
+# ---------------------------------------------------------------- serving (in the dark)
 
-## The next living guest clockwise: who `seat` pours for.
+## Who `seat` poured into this round (-1 if they haven't yet).
 func pour_target(seat: int) -> int:
-	var n := seats.size()
-	for step in range(1, n):
-		var s := (seat + step) % n
-		if seats[s]["alive"]:
-			return s
-	return seat
+	return int(seats[seat]["served"]) if seat >= 0 and seat < seats.size() else -1
 
 
-## Pour tea for your neighbour and drop the card at `card_index` of your hand into their cup.
-func pour(seat: int, card_index: int) -> bool:
-	if not is_alive(seat) or seats[seat]["poured"]:
+func can_serve(seat: int, target: int) -> bool:
+	return is_alive(seat) and is_alive(target) and target != seat and not seats[seat]["poured"]
+
+
+## Pour the card at `card_index` of your hand into `target`'s cup (any living guest but you).
+func pour(seat: int, card_index: int, target: int) -> bool:
+	if not can_serve(seat, target):
 		return false
 	var hand: Array = seats[seat]["hand"]
 	if card_index < 0 or card_index >= hand.size():
 		return false
 	var k: int = hand[card_index]
 	hand.remove_at(card_index)
-	var target := pour_target(seat)
 	var cup: Dictionary = cups[cup_at[target]]
-	cup["tea"] = true
 	(cup["contents"] as Array).append({"k": k, "by": seat})
 	seats[seat]["poured"] = true
 	seats[seat]["dropped"] = k
+	seats[seat]["served"] = target
+	(seats[seat]["evidence"] as Array).append({"kind": "poured", "k": k, "into": target})
 	return true
 
 
-## Out of time: the card is picked for you.
+## Out of time: a harmless card into a random cup (the clock never poisons for you).
 func auto_pour(seat: int) -> int:
 	var hand: Array = seats[seat]["hand"]
-	var idx := rng.randi_range(0, hand.size() - 1) if not hand.is_empty() else -1
-	if idx < 0:
+	var others := alive_seats()
+	others.erase(seat)
+	if others.is_empty() or hand.is_empty():
 		seats[seat]["poured"] = true
-		cups[cup_at[pour_target(seat)]]["tea"] = true
 		return I.NOTHING
+	var idx := 0
+	for i in hand.size():
+		if hand[i] != I.POISON:
+			idx = i
+			break
 	var k: int = hand[idx]
-	pour(seat, idx)
+	pour(seat, idx, others[rng.randi_range(0, others.size() - 1)])
 	return k
-
-
-## The butler's extra poison, into any other living guest's cup, once per round.
-func spike(seat: int, target: int) -> bool:
-	if seats[seat]["role"] != &"butler" or seats[seat]["spiked"] or not is_alive(seat) or round_no < 2:
-		return false
-	if not is_alive(target) or target == seat:
-		return false
-	(cups[cup_at[target]]["contents"] as Array).append({"k": I.POISON, "by": seat, "spike": true})
-	seats[seat]["spiked"] = true
-	return true
 
 
 func all_poured() -> bool:
@@ -229,10 +248,37 @@ func all_poured() -> bool:
 	return true
 
 
+## After the serve: most living guests glimpsed ONE other guest's pour (the candles flicker, so
+## some saw nothing). Returns seat -> sighting. Sightings are true; what people SAY is up to them.
+func deal_sightings() -> Dictionary:
+	var out := {}
+	var alive := alive_seats()
+	var chance := float(rules.get("glimpse_chance", -1.0))
+	if chance < 0.0:
+		chance = glimpse_for(seats.size())
+	for seat in alive:
+		if rng.randf() > chance:
+			(seats[seat]["evidence"] as Array).append({"kind": "dark"})
+			out[seat] = {"kind": "dark", "who": -1, "into": -1}
+			continue
+		var pool: Array[int] = []
+		for o in alive:
+			if o != seat and int(seats[o]["served"]) >= 0:
+				pool.append(o)
+		if pool.is_empty():
+			continue
+		var who: int = pool[rng.randi_range(0, pool.size() - 1)]
+		var ev := {"kind": "saw", "who": who, "into": int(seats[who]["served"])}
+		(seats[seat]["evidence"] as Array).append(ev)
+		out[seat] = ev
+	for seat in alive:
+		cups[cup_at[seat]]["tea"] = true
+	return out
+
+
 # ---------------------------------------------------------------- items (everyone at once)
 # Everybody picks an item and its targets during the same short window; then they all play out
-# in a fixed order that anyone can follow: sniffs and peeks first (information), then swaps (the
-# cups move), then toasts (the drama). Within each group, seat order rotates every round.
+# in a fixed order: sniffs and watches first (information), then swaps (the cups move).
 
 const ITEM_ORDER := [Defs.Item.SNIFF, Defs.Item.PEEK, Defs.Item.SWAP, Defs.Item.TOAST]
 
@@ -270,7 +316,7 @@ func item_error(seat: int, item: int, targets: Array) -> String:
 		return "Pick %d target%s." % [need, "s" if need > 1 else ""]
 	for t: int in targets:
 		if not is_alive(t):
-			return "Only living guests' cups."
+			return "Only living guests."
 	match item:
 		IT.SWAP:
 			if targets[0] == targets[1]:
@@ -309,7 +355,6 @@ func resolve_items() -> Array:
 	var order: Array[int] = []
 	for i in alive.size():
 		order.append(alive[(i + offset) % alive.size()])
-	fallen_last.clear()
 	for kind: int in ITEM_ORDER:
 		for seat in order:
 			var pk: Dictionary = picks.get(seat, {})
@@ -317,15 +362,11 @@ func resolve_items() -> Array:
 				continue
 			var step := {"seat": seat, "item": kind, "public": [], "private": []}
 			steps.append(step)
-			if not is_alive(seat):
-				step["public"].append({"type": "note", "text": "%s's %s fizzles (they're dead)." % [seats[seat]["name"], Defs.item_name(kind)]})
-				continue
 			var targets: Array = pk["targets"]
-			if item_error(seat, kind, targets) != "":
-				step["public"].append({"type": "note", "text": "%s's %s fizzles." % [seats[seat]["name"], Defs.item_name(kind)]})
-				_remove_item(seat, kind)
-				continue
 			_remove_item(seat, kind)
+			if not is_alive(seat) or item_error(seat, kind, targets) != "":
+				step["public"].append({"type": "note", "text": "%s's %s fizzles." % [seats[seat]["name"], Defs.item_name(kind)]})
+				continue
 			match kind:
 				IT.SWAP:
 					var a: int = targets[0]
@@ -340,14 +381,18 @@ func resolve_items() -> Array:
 				IT.SNIFF:
 					var t: int = targets[0]
 					seats[seat]["sniffs"] += 1
+					var sm := smell(t)
+					(seats[seat]["evidence"] as Array).append({"kind": "sniff", "target": t, "smell": sm})
 					step["public"].append({"type": "sniff", "seat": seat, "target": t})
-					step["private"].append({"type": "sniff_result", "target": t, "smell": smell(t)})
+					step["private"].append({"type": "sniff_result", "target": t, "smell": sm})
 				IT.PEEK:
+					# WATCH: learn whose cup this guest poured into.
 					var t: int = targets[0]
 					seats[seat]["peeks"] += 1
+					var into := int(seats[t]["served"])
+					(seats[seat]["evidence"] as Array).append({"kind": "watch", "who": t, "into": into})
 					step["public"].append({"type": "peek", "seat": seat, "target": t})
-					step["private"].append({"type": "peek_result", "target": t,
-						"hand": (seats[t]["hand"] as Array).duplicate(), "items": (seats[t]["items"] as Array).duplicate()})
+					step["private"].append({"type": "watch_result", "who": t, "into": into})
 				IT.TOAST:
 					var t: int = targets[0]
 					seats[seat]["toasts"] += 1
@@ -364,7 +409,7 @@ func _remove_item(seat: int, kind: int) -> void:
 		items.remove_at(i)
 
 
-## Knocked over (a cake, a clumsy fall): the cup is emptied. An empty cup is safe to drink.
+## Knocked over (a cake): the cup is emptied, so it's safe to drink. Returns true if it was deadly.
 func spill(seat: int, by: int = -1) -> bool:
 	if seat < 0 or seat >= cup_at.size() or not is_alive(seat):
 		return false
@@ -373,7 +418,6 @@ func spill(seat: int, by: int = -1) -> bool:
 		return false
 	var was_lethal := lethal(cup["contents"])
 	cup["contents"] = []
-	cup["tea"] = false
 	cup["spilled"] = true
 	cup["spilled_by"] = by
 	return was_lethal
@@ -391,7 +435,7 @@ func smell(seat: int) -> String:
 	return "poison" if has_poison else "clean"
 
 
-## Ghosts rattle a living guest's cup (a limited number of times per round).
+## Ghosts rattle a living guest's cup (spooky, a limited number of times per round).
 func rattle(ghost: int, target: int) -> bool:
 	if ghost < 0 or ghost >= seats.size() or seats[ghost]["alive"] or int(seats[ghost]["rattles"]) <= 0:
 		return false
@@ -415,22 +459,31 @@ static func lethal(contents: Array) -> bool:
 	return p > a
 
 
-## The seat drinks the cup in front of it. Returns the public drink event.
+static func has_poison(contents: Array) -> bool:
+	for c: Dictionary in contents:
+		if c["k"] == I.POISON:
+			return true
+	return false
+
+
+func _drink_event(seat: int, contents: Array, died: bool, toast: bool) -> Dictionary:
+	var cup: Dictionary = cups[cup_at[seat]]
+	return {"type": "drink", "seat": seat, "cup": cup_at[seat], "contents": contents, "died": died, "toast": toast,
+		"saved": has_poison(contents) and not died, "spilled": bool(cup.get("spilled", false)),
+		"role": seats[seat]["role"], "blame": blame(contents, cup)}
+
+
+## The seat drinks the cup in front of it. Returns the drink event (host side: "blame" names the
+## poisoners; Session strips that before telling anyone).
 func drink(seat: int, toast: bool = false) -> Dictionary:
 	var cup: Dictionary = cups[cup_at[seat]]
-	var contents: Array = (cup["contents"] as Array).duplicate(true)
-	var died := false
-	if not cup["drunk"]:
-		died = lethal(contents)
-		cup["drunk"] = true
-	else:
-		contents = []
-	var ev := {"type": "drink", "seat": seat, "cup": cup_at[seat], "contents": contents, "died": died, "toast": toast,
-		"blame": blame(contents, cup)}
+	var contents: Array = (cup["contents"] as Array).duplicate(true) if not cup["drunk"] else []
+	var died: bool = lethal(contents) and not bool(cup["drunk"])
+	var ev := _drink_event(seat, contents, died, toast)
+	cup["drunk"] = true
 	drinks.append(ev)
 	if died:
 		_kill(seat, contents)
-		_assign_grudges()
 	ev["moments"] = moments(ev)
 	return ev
 
@@ -440,12 +493,10 @@ func drink_all() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	var alive := alive_seats()
 	fallen_last.clear()
-	# Resolve simultaneously: decide deaths first, then apply.
 	for seat in alive:
 		var cup: Dictionary = cups[cup_at[seat]]
 		var contents: Array = (cup["contents"] as Array).duplicate(true) if not cup["drunk"] else []
-		out.append({"type": "drink", "seat": seat, "cup": cup_at[seat], "contents": contents, "died": lethal(contents), "toast": false,
-			"blame": blame(contents, cup)})
+		out.append(_drink_event(seat, contents, lethal(contents), false))
 		cup["drunk"] = true
 	for ev in out:
 		drinks.append(ev)
@@ -453,7 +504,6 @@ func drink_all() -> Array[Dictionary]:
 			_kill(ev["seat"], ev["contents"])
 	for ev in out:
 		ev["moments"] = moments(ev)
-	_assign_grudges()
 	for seat in alive_seats():
 		seats[seat]["rounds_survived"] += 1
 	return out
@@ -462,12 +512,6 @@ func drink_all() -> Array[Dictionary]:
 func _kill(seat: int, contents: Array) -> void:
 	seats[seat]["alive"] = false
 	seats[seat]["died_round"] = round_no
-	# Any ghost holding a grudge against this guest gets their revenge.
-	for g in seats.size():
-		if g != seat and not seats[g]["alive"] and int(seats[g]["grudge"]) == seat:
-			seats[g]["grudges_paid"] += 1
-			seats[g]["grudge"] = -1
-			seats[seat]["haunted_by"] = g
 	fallen_last.append(seat)
 	for c: Dictionary in contents:
 		var by: int = c["by"]
@@ -475,120 +519,143 @@ func _kill(seat: int, contents: Array) -> void:
 			seats[by]["kills"] += 1
 
 
-## Every ghost without a grudge gets a secret living target. Ghosts see inside every cup, and on
-## a Discord call they can say anything, so this gives them a reason to lie: "your cup's fine, drink it".
-func _assign_grudges() -> void:
-	var living := alive_seats()
-	for g in seats.size():
-		if seats[g]["alive"] or int(seats[g]["grudge"]) >= 0:
-			continue
-		var pool: Array[int] = []
-		for t in living:
-			if seats[g]["team"] < 0 or seats[t]["team"] != seats[g]["team"]:
-				pool.append(t)
-		if pool.size() >= 2 or (pool.size() == 1 and living.size() > 1):
-			seats[g]["grudge"] = pool[rng.randi_range(0, pool.size() - 1)]
-
-
-## Headline moments for a death (the clip titles): OWN GOAL, SELF-SWAP, BETRAYED, HAUNTED.
+## Headline moments for a drink (the clip titles). Never names a living poisoner.
 func moments(ev: Dictionary) -> Array:
 	var out: Array = []
+	var seat := int(ev["seat"])
+	var nm: String = seats[seat]["name"]
+	if ev.get("saved", false) and not ev.get("died", false):
+		out.append({"title": "ANTIDOTE SAVE!", "sub": "%s's cup was POISONED... and someone slipped in the antidote" % nm})
+		return out
 	if not ev.get("died", false):
 		return out
-	var seat := int(ev["seat"])
 	var bl: Dictionary = ev.get("blame", {})
-	var poisoners: Array = bl.get("poisoners", [])
-	if poisoners.has(seat):
-		out.append({"title": "OWN GOAL!", "sub": "%s drank their OWN poison" % seats[seat]["name"]})
+	if is_poisoner(seat):
+		if (bl.get("poisoners", []) as Array).has(seat):
+			out.append({"title": "OWN GOAL!", "sub": "The POISONER %s drank their own poison" % nm})
+		else:
+			out.append({"title": "POISONER DOWN!", "sub": "%s was a poisoner, and got poisoned" % nm})
 	if int(bl.get("swapped_by", -1)) == seat:
-		out.append({"title": "SELF-SWAP!", "sub": "%s swapped the deadly cup to THEMSELVES" % seats[seat]["name"]})
-	for p: int in poisoners:
-		if p >= 0 and p != seat and seats[seat]["team"] >= 0 and seats[p]["team"] == seats[seat]["team"]:
-			out.append({"title": "BETRAYED!", "sub": "by their own teammate %s" % seats[p]["name"]})
-	var hb := int(seats[seat].get("haunted_by", -1))
-	if hb >= 0:
-		out.append({"title": "REVENGE FROM BEYOND!", "sub": "The ghost of %s got their grudge: %s" % [seats[hb]["name"], seats[seat]["name"]]})
+		out.append({"title": "SELF-SWAP!", "sub": "%s swapped the deadly cup to THEMSELVES" % nm})
 	return out
 
 
-## Who's to blame for a cup: {"poisoners": [seats] (-1 = the laced pot), "swapped_by": seat or -1,
-## "spilled_by": seat or -1}.
+## Who's really to blame (host only, for kills and moments).
 static func blame(contents: Array, cup: Dictionary) -> Dictionary:
 	var by: Array = []
 	for c: Dictionary in contents:
-		var who := -2 if c.get("spike", false) else int(c["by"])
-		if c["k"] == Defs.Ingredient.POISON and not by.has(who):
-			by.append(who)
+		if c["k"] == Defs.Ingredient.POISON and not by.has(int(c["by"])):
+			by.append(int(c["by"]))
 	return {"poisoners": by, "swapped_by": int(cup.get("swapped_by", -1)), "spilled": bool(cup.get("spilled", false)),
 		"spilled_by": int(cup.get("spilled_by", -1))}
 
 
-## The reveal: what was in every cup that was drunk this round.
+## The reveal: for each guest who fell (or was saved), what was in the cup, without names.
 func reveal() -> Array:
 	var out: Array = []
 	for d in drinks:
+		if not (d["died"] or d.get("saved", false)):
+			continue
 		var kinds: Array = []
 		for c: Dictionary in d["contents"]:
 			kinds.append(c["k"])
-		out.append({"seat": d["seat"], "kinds": kinds, "died": d["died"], "toast": d["toast"], "blame": d.get("blame", {})})
+		kinds.sort()
+		out.append({"seat": d["seat"], "kinds": kinds, "died": d["died"], "saved": d.get("saved", false),
+			"toast": d["toast"], "role": d["role"] if d["died"] else &""})
 	return out
+
+
+# ---------------------------------------------------------------- the vote
+
+func begin_vote() -> void:
+	votes.clear()
+	for seat in seats.size():
+		seats[seat]["voted"] = not seats[seat]["alive"]
+
+
+## `target` -1 = skip. One vote each.
+func vote(seat: int, target: int) -> bool:
+	if not is_alive(seat) or seats[seat]["voted"]:
+		return false
+	if target != -1 and (not is_alive(target) or target == seat):
+		return false
+	votes[seat] = target
+	seats[seat]["voted"] = true
+	return true
+
+
+func votes_done() -> bool:
+	for seat in alive_seats():
+		if not seats[seat]["voted"]:
+			return false
+	return true
+
+
+## Count the votes and throw out the winner. Returns {ejected: seat or -1, role, tally: {target: n},
+## votes: {voter: target}, reason}. A tie, or skips winning, throws nobody out.
+func tally() -> Dictionary:
+	var counts := {}
+	for voter: int in votes:
+		var t: int = votes[voter]
+		counts[t] = int(counts.get(t, 0)) + 1
+	var best := -1
+	var best_n := 0
+	var tie := false
+	for t: int in counts:
+		var n: int = counts[t]
+		if n > best_n:
+			best_n = n
+			best = t
+			tie = false
+		elif n == best_n:
+			tie = true
+	var res := {"ejected": -1, "role": &"", "tally": counts, "votes": votes.duplicate(), "reason": ""}
+	fallen_last.clear()
+	if best_n == 0:
+		res["reason"] = "Nobody voted."
+	elif tie:
+		res["reason"] = "A tie. Nobody is thrown out."
+	elif best == -1:
+		res["reason"] = "Most guests skipped. Nobody is thrown out."
+	else:
+		res["ejected"] = best
+		res["role"] = seats[best]["role"]
+		seats[best]["alive"] = false
+		seats[best]["ejected"] = true
+		seats[best]["died_round"] = round_no
+		fallen_last.append(best)
+		for voter: int in votes:
+			if int(votes[voter]) == best and is_poisoner(best) and not is_poisoner(voter):
+				seats[voter]["good_votes"] += 1
+	return res
 
 
 # ---------------------------------------------------------------- winning
 
 ## {over, winners: Array[int] seats, reason}
 func check_winner(final_round_reached: bool = false) -> Dictionary:
-	var alive := alive_seats()
+	var p := 0
+	var g := 0
+	for s in alive_seats():
+		if is_poisoner(s):
+			p += 1
+		else:
+			g += 1
 	var res := {"over": false, "winners": [], "reason": ""}
-	match mode():
-		&"teams":
-			var counts := [0, 0]
-			for s in alive:
-				counts[seats[s]["team"]] += 1
-			if counts[0] == 0 or counts[1] == 0 or final_round_reached:
-				res["over"] = true
-				var team := -1
-				if counts[0] > counts[1]:
-					team = 0
-				elif counts[1] > counts[0]:
-					team = 1
-				if team < 0 and alive.is_empty():
-					# Both teams fell together: the team with the most last-fallen shares.
-					for s in fallen_last:
-						res["winners"].append(s)
-					res["reason"] = "Both teams fell at once. A bitter draw."
-				elif team < 0:
-					res["winners"] = alive
-					res["reason"] = "Time's up: the teams share the pot."
-				else:
-					for i in seats.size():
-						if seats[i]["team"] == team:
-							res["winners"].append(i)
-					res["reason"] = "Team %s holds the table." % Defs.TEAM_NAMES[team]
-		&"butler":
-			var b := butler_seat()
-			if b >= 0 and not is_alive(b):
-				res["over"] = true
-				for i in seats.size():
-					if i != b:
-						res["winners"].append(i)
-				res["reason"] = "The butler did it, and the butler is dead. The guests win."
-			elif b >= 0 and (alive.size() <= (2 if seats.size() >= 5 else 1) or final_round_reached):
-				res["over"] = true
-				res["winners"] = [b]
-				res["reason"] = "Only the butler is left to clear the table. The butler wins."
-		_:
-			if alive.size() <= 1 or final_round_reached:
-				res["over"] = true
-				if alive.size() == 1:
-					res["winners"] = alive
-					res["reason"] = "%s is the last guest standing." % seats[alive[0]]["name"]
-				elif alive.is_empty():
-					res["winners"] = fallen_last.duplicate()
-					res["reason"] = "Nobody survived. The last to fall share the win."
-				else:
-					res["winners"] = alive
-					res["reason"] = "The tea ran out. The survivors share the win."
+	var names: Array[String] = []
+	for s in poisoner_seats():
+		names.append(String(seats[s]["name"]))
+	var who := " & ".join(names)
+	if p == 0:
+		res["over"] = true
+		for i in seats.size():
+			if not is_poisoner(i):
+				res["winners"].append(i)
+		res["reason"] = "Every poisoner is out. The guests win! (It was %s.)" % who
+	elif p >= g or final_round_reached:
+		res["over"] = true
+		res["winners"] = poisoner_seats()
+		res["reason"] = "%s poisoned the party and got away with it." % who
 	return res
 
 
@@ -601,16 +668,19 @@ func public_state() -> Dictionary:
 		var s := seats[i]
 		ps.append({
 			"id": s["id"], "name": s["name"], "bot": s["bot"], "cos": s["cos"], "level": s["level"],
-			"alive": s["alive"], "team": s["team"], "poured": s["poured"], "item_done": s["item_done"],
-			"ready": s["ready"], "rattles": s["rattles"], "hand_count": (s["hand"] as Array).size(),
-			"item_count": (s["items"] as Array).size(), "pour_target": pour_target(i) if s["alive"] else -1,
+			"alive": s["alive"], "team": -1, "poured": s["poured"], "item_done": s["item_done"],
+			"ready": s["ready"], "voted": s["voted"], "rattles": s["rattles"], "hand_count": (s["hand"] as Array).size(),
+			"item_count": (s["items"] as Array).size(), "pour_target": -1, "ejected": s["ejected"],
+			# Roles are shown once you're out (dead or thrown out), like Among Us "confirm ejects".
+			"role": s["role"] if not s["alive"] else &"",
 		})
 	var cs: Array = []
 	for seat in cup_at.size():
 		var c: Dictionary = cups[cup_at[seat]]
-		cs.append({"id": c["id"], "owner": c["owner"], "tea": c["tea"], "drunk": c["drunk"], "count": (c["contents"] as Array).size(),
+		# No content count: how many pours went into a cup is secret too.
+		cs.append({"id": c["id"], "owner": c["owner"], "tea": c["tea"], "drunk": c["drunk"],
 			"spilled": bool(c.get("spilled", false))})
-	return {"round": round_no, "laced": laced, "seats": ps, "cups": cs}
+	return {"round": round_no, "laced": false, "seats": ps, "cups": cs, "poisoners": poisoner_count(seats.size())}
 
 
 ## What one seat may see on top of the public state.
@@ -618,19 +688,14 @@ func private_state(seat: int) -> Dictionary:
 	if seat < 0 or seat >= seats.size():
 		return {}
 	var s := seats[seat]
-	var out := {
+	var partners: Array = []
+	if is_poisoner(seat):
+		for o in poisoner_seats():
+			if o != seat:
+				partners.append(o)
+	return {
 		"seat": seat, "hand": (s["hand"] as Array).duplicate(), "items": (s["items"] as Array).duplicate(),
-		"dropped": s["dropped"], "role": s["role"], "team": s["team"],
-		"spike": s["role"] == &"butler" and not s["spiked"] and s["alive"] and round_no >= 2,
-		"target": pour_target(seat),
-		"grudge": int(s["grudge"]),
+		"dropped": s["dropped"], "role": s["role"], "team": -1, "partners": partners,
+		"target": int(s["served"]), "evidence": (s["evidence"] as Array).duplicate(true),
+		"spike": false,
 	}
-	if not s["alive"] and rules.get("ghosts_see_cups", true):
-		var view: Array = []
-		for t in cup_at.size():
-			var kinds: Array = []
-			for c: Dictionary in cups[cup_at[t]]["contents"]:
-				kinds.append(c["k"])
-			view.append(kinds)
-		out["ghost_view"] = view
-	return out

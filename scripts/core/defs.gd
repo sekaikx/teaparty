@@ -4,41 +4,42 @@ extends RefCounted
 
 enum Ingredient { NOTHING, POISON, ANTIDOTE, SUGAR }
 enum Item { SWAP, SNIFF, TOAST, PEEK }
-enum Phase { LOBBY, INTRO, DEAL, POUR, ITEMS, TALK, DRINK, REVEAL, MATCH_END }
+## Round order: DEAL > POUR (serve in the dark) > ITEMS > DRINK (the toast) > REVEAL > TALK (the
+## meeting) > VOTE > EJECT. New phases are appended so the numbers of the old ones never change.
+enum Phase { LOBBY, INTRO, DEAL, POUR, ITEMS, TALK, DRINK, REVEAL, MATCH_END, VOTE, EJECT }
 
 const INGREDIENTS := {
-	Ingredient.NOTHING: {"name": "Nothing", "short": "Plain", "color": Color("b8a88a"),
-		"desc": "Just tea. Pour it with a straight face."},
+	Ingredient.NOTHING: {"name": "Plain", "short": "Plain", "color": Color("b8a88a"),
+		"desc": "Just tea. Harmless, but it gives you an alibi."},
 	Ingredient.POISON: {"name": "Poison", "short": "Poison", "color": Color("5f8a2c"),
 		"desc": "One drop and the drinker collapses (unless an antidote is in the cup too)."},
 	Ingredient.ANTIDOTE: {"name": "Antidote", "short": "Antidote", "color": Color("2e6a93"),
 		"desc": "Cancels one poison in the same cup."},
 	Ingredient.SUGAR: {"name": "Sugar", "short": "Sugar", "color": Color("e9e1d0"),
-		"desc": "Masks the taste: a sniff of this cup tells nothing."},
+		"desc": "Harmless, but a sniff of a sugared cup tells nothing."},
 }
 
 const ITEMS := {
 	Item.SWAP: {"name": "Swap", "targets": 2, "target": &"cup",
-		"desc": "Swap two cups on the table (after the sniffs). Everyone sees the cups move."},
+		"desc": "Swap two cups on the table. Everyone sees it (so you'll have to explain yourself)."},
 	Item.SNIFF: {"name": "Sniff", "targets": 1, "target": &"cup",
-		"desc": "Sniff a cup: you alone learn if it smells of poison (sugar hides it)."},
+		"desc": "Sniff a cup: you alone learn if it's poisoned right now (sugar hides it)."},
 	Item.TOAST: {"name": "Force a Toast", "targets": 1, "target": &"guest",
 		"desc": "Raise a toast to a guest: they must drink their cup right now (after the swaps)."},
-	Item.PEEK: {"name": "Peek", "targets": 1, "target": &"guest",
-		"desc": "Peek at a guest's tray: the ingredients they did not pour, and their items."},
+	Item.PEEK: {"name": "Watch", "targets": 1, "target": &"guest",
+		"desc": "Watch a guest: you alone learn whose cup they poured into. Catch a liar."},
 }
 
 const PHASE_NAMES := {
 	Phase.LOBBY: "Lobby", Phase.INTRO: "The guests arrive", Phase.DEAL: "Dealing",
-	Phase.POUR: "Pour", Phase.ITEMS: "Items", Phase.TALK: "Talk it out",
-	Phase.DRINK: "Drink!", Phase.REVEAL: "The reveal", Phase.MATCH_END: "Party's over",
+	Phase.POUR: "Serve", Phase.ITEMS: "Items", Phase.TALK: "Meeting",
+	Phase.DRINK: "Toast", Phase.REVEAL: "The reveal", Phase.MATCH_END: "Party's over",
+	Phase.VOTE: "Vote", Phase.EJECT: "Thrown out",
 }
 
 ## Modes and rooms, with the player level that unlocks them.
 const MODES := {
-	&"classic": {"name": "Classic", "level": 1, "desc": "Every guest for themselves. Last one standing wins."},
-	&"teams": {"name": "Teams", "level": 2, "desc": "Earl Grey vs Darjeeling. Teammates know each other; a team wins when the other is gone."},
-	&"butler": {"name": "The Butler", "level": 4, "desc": "One hidden butler spikes a cup every round. Guests win by poisoning the butler; the butler wins if they reach the final two."},
+	&"classic": {"name": "Murder at Teatime", "level": 1, "desc": "A secret poisoner (two with 8 guests) is at the table. Find them and vote them out before they poison everyone."},
 }
 
 const ROOMS := {
@@ -58,19 +59,22 @@ const DEFAULT_RULES := {
 	"mode": &"classic",
 	"max_players": 6,
 	"hand_size": 3,
-	"pour_time": 20.0,
-	"item_turn_time": 15.0,
-	"talk_time": 35.0,
+	"pour_time": 25.0,
+	"item_turn_time": 12.0,
+	"talk_time": 60.0,
+	"vote_time": 20.0,
+	## How likely each guest is to glimpse one other guest's pour in the dark (-1 = by table size).
+	"glimpse_chance": -1.0,
 	"items_per_round": 1,
 	"max_items": 2,
 	"laced_round": 5,
-	"max_rounds": 10,
+	"max_rounds": 8,
 	"poison_scale": 1.0,
 	"ghost_rattles": 3,
-	"ghosts_see_cups": true,
+	"ghosts_see_cups": false,
 	"ghosts_talk_to_living": false,
 	"helium": false,
-	"items_enabled": [Item.SWAP, Item.SNIFF, Item.TOAST, Item.PEEK],
+	"items_enabled": [Item.SWAP, Item.SNIFF, Item.PEEK],
 }
 
 ## Emote wheel: label, speech bubble line, gesture (Guest.gesture) and a voice blip.
@@ -90,6 +94,38 @@ const BOT_NAMES := [
 	"Lord Biscuit", "Auntie Oolong", "Vicar Treacle", "Countess Chai", "Baron Jam",
 	"Madame Lapsang", "Captain Kettle",
 ]
+
+
+## Things you can SAY at the meeting (a button bar, for players not on voice and for bots).
+## Any claim can be a lie.
+const CLAIMS := {
+	&"poured": "I poured %s into %s's cup.",
+	&"saw": "I saw %s pour into %s's cup!",
+	&"sniff": "I sniffed %s's cup: %s.",
+	&"watch": "I watched %s: they poured into %s's cup!",
+	&"sus": "It's %s! Vote %s!",
+	&"clear": "%s is innocent, I'd bet on it.",
+}
+
+
+## The words of a claim {kind, a, b, k, smell}, with `nm` turning a seat into a name.
+static func claim_text(c: Dictionary, nm: Callable) -> String:
+	match StringName(c.get("kind", "")):
+		&"poured":
+			var k := int(c.get("k", -1))
+			return "I poured %s into %s's cup." % [ingredient_name(k).to_upper() if k >= 0 else "something", nm.call(int(c["a"]))]
+		&"saw":
+			return "I saw %s pour into %s's cup!" % [nm.call(int(c["a"])), nm.call(int(c["b"]))]
+		&"sniff":
+			var sm := String(c.get("smell", "clean"))
+			return "I sniffed %s's cup: %s." % [nm.call(int(c["a"])), {"poison": "POISON", "clean": "it was clean", "sweet": "too sweet to tell"}.get(sm, sm)]
+		&"watch":
+			return "I watched %s: they poured into %s's cup!" % [nm.call(int(c["a"])), nm.call(int(c["b"]))]
+		&"sus":
+			return "It's %s! Vote %s!" % [nm.call(int(c["a"])), nm.call(int(c["a"]))]
+		&"clear":
+			return "%s is innocent, I'd bet on it." % nm.call(int(c["a"]))
+	return "..."
 
 
 static func ingredient_name(k: int) -> String:

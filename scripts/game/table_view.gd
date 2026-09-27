@@ -19,6 +19,8 @@ var my_seat := -1
 var tea_poured := false
 var card_dropped := false
 var spiked := false
+## Whose cup you're serving this round (you pick it with the teapot).
+var serve_to := -1
 ## Item targeting: index into private items, or -1.
 var targeting := -1
 var targets: Array[int] = []
@@ -246,9 +248,10 @@ func _update_arrow(delta: float) -> void:
 	var target := Vector3.INF
 	if can_pour_tea():
 		if _held:
-			var cup := cup_at_seat(pour_target())
-			if cup:
-				target = cup.global_position + Vector3(0, 0.35, 0)
+			if _hover_seat >= 0 and _hover_seat != my_seat and bool(Session.seat_info(_hover_seat).get("alive", false)):
+				var cup := cup_at_seat(_hover_seat)
+				if cup:
+					target = cup.global_position + Vector3(0, 0.35, 0)
 		else:
 			target = pots[my_seat].global_position + Vector3(0, 0.38, 0)
 	elif can_drop_card():
@@ -407,7 +410,11 @@ func can_rattle() -> bool:
 
 
 func pour_target() -> int:
-	return int(Session.private.get("target", -1))
+	return serve_to if serve_to >= 0 else int(Session.private.get("target", -1))
+
+
+func _servable(seat: int) -> bool:
+	return seat >= 0 and seat != my_seat and bool(Session.seat_info(seat).get("alive", false))
 
 
 func begin_targeting(item_index: int) -> void:
@@ -443,7 +450,9 @@ func _update_highlights() -> void:
 	for s: int in cups:
 		var cup: TeaCup = cups[s]
 		var on := false
-		if can_pour_tea() or can_drop_card():
+		if can_pour_tea():
+			on = _held != null and _servable(cup.seat) and (cup.seat == _hover_seat or int(Time.get_ticks_msec() / 500) % 2 == 0)
+		elif can_drop_card():
 			on = cup.seat == tgt
 		elif targeting >= 0:
 			var item := targeting_item()
@@ -577,10 +586,10 @@ func _left_release(pos: Vector2) -> void:
 func _drop_teapot(pos: Vector2) -> void:
 	var pot := _held
 	_held = null
-	var tgt := pour_target()
 	var seat := seat_at(pos, 90.0)
-	if seat == tgt and tgt >= 0:
-		var cup := cup_at_seat(tgt)
+	if _servable(seat):
+		serve_to = seat
+		var cup := cup_at_seat(seat)
 		pot.pour_into(cup.position, func() -> void:
 			cup.set_filled(true)
 			tea_poured = true
@@ -611,7 +620,7 @@ func drop_card(screen: Vector2, card_index: int, spike: bool) -> bool:
 	if card_index < 0 or card_index >= hand.size():
 		return false
 	var k: int = hand[card_index]
-	Session.request_pour(card_index)
+	Session.request_pour(card_index, serve_to)
 	card_dropped = true
 	cup.splash(Defs.INGREDIENTS[k]["color"])
 	Sfx.play_at(&"sugar" if k == Defs.Ingredient.SUGAR else &"plip", cup.global_position)
@@ -632,7 +641,7 @@ func _on_state() -> void:
 		var spot := layout.cup_spots[seat]
 		if not _drinking.has(id) and cup.home.distance_to(spot) > 0.01:
 			cup.move_home(spot)
-		if Session.phase in [P.ITEMS, P.TALK] and bool(cs[seat]["tea"]) and not bool(cs[seat]["drunk"]) and not cup.is_filled():
+		if Session.phase in [P.ITEMS, P.DRINK] and bool(cs[seat]["tea"]) and not bool(cs[seat]["drunk"]) and not cup.is_filled():
 			cup.set_filled(true)
 	# Anyone dead outside the drinking moments is a ghost by now.
 	if Session.phase in [P.DEAL, P.POUR, P.ITEMS, P.TALK]:
@@ -667,6 +676,7 @@ func _on_event(ev: Dictionary) -> void:
 			tea_poured = false
 			card_dropped = false
 			spiked = false
+			serve_to = -1
 			targeting = -1
 			for id: int in cups:
 				(cups[id] as TeaCup).set_filled(false)
@@ -676,15 +686,28 @@ func _on_event(ev: Dictionary) -> void:
 					g.become_ghost()
 			Sfx.play(&"bell", -2.0)
 		"pour":
-			var s: int = ev["seat"]
-			var t: int = ev["target"]
-			var cup := cup_at_seat(t)
-			if s == my_seat and tea_poured:
-				pass
-			elif cup and s < pots.size():
-				pots[s].pour_into(cup.position, func() -> void:
+			# In the dark you only HEAR a pour (a soft trickle), never where.
+			if int(ev["seat"]) != my_seat:
+				Sfx.play(&"plip", -12.0, 0.3)
+		"lights_on":
+			for id: int in cups:
+				var cup: TeaCup = cups[id]
+				if bool(Session.seat_info(cup.seat).get("alive", false)):
 					cup.set_filled(true)
-					cup.splash())
+		"vote_result":
+			var ej := int(ev.get("ejected", -1))
+			if ej >= 0 and ej < guests.size():
+				var g := guests[ej]
+				var caught := StringName(ev.get("role", &"")) == &"poisoner"
+				_focus = g.head_position()
+				_focus_until = Time.get_ticks_msec() + 3500
+				var head := g.head_position()
+				get_tree().create_timer(0.8).timeout.connect(func() -> void:
+					g.die(&"yeet")
+					shake(0.2)
+					Sfx.play(&"sting", -2.0)
+					_blame_labels.append(_float_text(head + Vector3(0, 0.75, 0), "WAS THE POISONER!" if caught else "WAS INNOCENT...",
+						Color("ff5d8f") if caught else Color("c3a6ff"), 0.0, 34)))
 		"spike_sound":
 			Sfx.play(&"plip", -8.0, 0.2)
 		"swap":
@@ -803,7 +826,8 @@ func _play_drinks(drinks: Array, delay: float) -> void:
 					if beat > 0.0:
 						shake(0.12)
 						Sfx.play(&"sting", -6.0)
-					_blame_labels.append(_float_text(head + Vector3(0, 0.75, 0), blame_text(d.get("blame", {})), Color("ff5d8f"), 0.0, 30))
+					var role := StringName(d.get("role", &""))
+					_blame_labels.append(_float_text(head + Vector3(0, 0.75, 0), "POISONED!" + ("\n(they were a POISONER)" if role == &"poisoner" else "\nWHO DID IT?"), Color("ff5d8f"), 0.0, 30))
 					if g.seat == my_seat:
 						_death_cam_until = Time.get_ticks_msec() + int((t + 1.8) * 1000.0))
 			elif g.alive and not g.is_down():

@@ -26,14 +26,14 @@ func _ready() -> void:
 	Ui.pin(head, Vector2(0, 0), Vector2(0, 0), Vector2(46, 26))
 	_title = Ui.title("TEA PARTY", 104, Ui.YELLOW)
 	head.add_child(_title)
-	var tag := Ui.chip("POISON  -  LIES  -  CAKE", Ui.PINK, Ui.CREAM, 22)
+	var tag := Ui.chip("MURDER AT TEATIME  -  FIND THE POISONER", Ui.PINK, Ui.CREAM, 22)
 	tag.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	head.add_child(tag)
 
 	var col := Ui.vbox(14)
 	add_child(col)
 	Ui.pin(col, Vector2(0, 1), Vector2(0, 1), Vector2(46, -40))
-	col.add_child(Ui.button("PLAY NOW!", func() -> void: Net.quick_play(), Ui.MINT, 34, Vector2(360, 80)))
+	col.add_child(Ui.button("PLAY NOW!", func() -> void: _play_now(), Ui.MINT, 34, Vector2(360, 80)))
 	col.add_child(Ui.button("PARTY WITH BOTS (LOBBY)", func() -> void: Net.solo(), Ui.YELLOW, 20, Vector2(360, 52)))
 	col.add_child(Ui.button("PLAY ONLINE", func() -> void: online_requested.emit(), Ui.SKY, 30, Vector2(360, 74)))
 	var row := Ui.hbox(12)
@@ -87,3 +87,14 @@ func _process(_delta: float) -> void:
 func show_status(text: String) -> void:
 	if _status:
 		_status.text = text
+
+
+## First time with the new rules: the 5 how-to-play cards, then straight into a match.
+func _play_now() -> void:
+	if bool(Profile.settings.get("murder_rules_seen", false)):
+		Net.quick_play()
+		return
+	Profile.set_setting("murder_rules_seen", true)
+	var t := Tutorial.new()
+	t.closed.connect(func() -> void: Net.quick_play())
+	add_child(t)

@@ -59,7 +59,8 @@ func _ready() -> void:
 	OS.set_environment("SteamAppId", str(APP_ID))
 	OS.set_environment("SteamGameId", str(APP_ID))
 	_ensure_appid_file()
-	var id: int = int(steam.call("getSteamID")) if steam.has_method("getSteamID") else 0
+	# Fake Steam (tests) is always "running"; real GodotSteam must be initialised before any call.
+	var id: int = int(steam.call("getSteamID")) if steam.has_method(&"is_fake") else 0
 	if id == 0:
 		var res: Variant = _init_steam()
 		var ok: bool = typeof(res) == TYPE_BOOL and bool(res)
@@ -67,12 +68,13 @@ func _ready() -> void:
 			ok = int((res as Dictionary).get("status", 1)) == 0
 			if not ok:
 				reason = "Steam didn't start: %s. Is the Steam app running and are you logged in?" % (res as Dictionary).get("verbal", "unknown")
-		id = int(steam.call("getSteamID"))
-		if not ok and id == 0:
+		if not ok:
 			if reason == "Steam is not set up yet.":
 				reason = "Steam didn't start. Is the Steam app running and are you logged in?"
+			print("[Steam] ", reason)
 			status_changed.emit()
 			return
+		id = int(steam.call("getSteamID"))
 	steam_id = id
 	persona = String(steam.call("getPersonaName"))
 	available = steam_id != 0

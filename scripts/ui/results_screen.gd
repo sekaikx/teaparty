@@ -36,14 +36,12 @@ func show_result(res: Dictionary, my_seat: int) -> void:
 		var h := Ui.hbox(10)
 		row.add_child(h)
 		var extra := ""
-		if s.get("role", &"guest") == &"butler":
-			extra = "  (THE BUTLER)"
-		elif int(s.get("team", -1)) >= 0:
-			extra = "  (%s)" % Defs.TEAM_NAMES[int(s["team"])]
+		if StringName(s.get("role", &"guest")) == &"poisoner":
+			extra = "  (THE POISONER)"
 		var nm := Ui.label(("WINNER  " if winners.has(i) else "") + String(s["name"]) + extra + ("  - you" if i == my_seat else ""), 16, Ui.INK, 700)
 		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		h.add_child(nm)
-		h.add_child(Ui.label("survived" if s["alive"] else "died in round %d" % int(s["died_round"]), 15, Color(Ui.INK, 0.6)))
+		h.add_child(Ui.label("survived" if s["alive"] else ("thrown out in round %d" if s.get("ejected", false) else "poisoned in round %d") % int(s["died_round"]), 15, Color(Ui.INK, 0.6)))
 		h.add_child(Ui.chip(("%d KILL" if int(s["kills"]) == 1 else "%d KILLS") % int(s["kills"]), Ui.PINK if int(s["kills"]) > 0 else Ui.LILAC, Ui.INK, 13))
 		left.add_child(row)
 	var awards: Array = res.get("awards", [])

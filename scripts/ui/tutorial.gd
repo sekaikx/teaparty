@@ -6,21 +6,21 @@ extends Control
 signal closed
 
 const PAGES := [
-	{"title": "1. POUR FOR YOUR NEIGHBOUR", "color": Color("ffc93c"),
-		"icons": [["pot"], ["arrow"], ["cup"]],
-		"text": "Click your teapot, then click the cup of the guest on your LEFT (a yellow arrow shows you which). You pour their tea."},
-	{"title": "2. SLIP SOMETHING IN", "color": Color("ff5c8a"),
-		"icons": [["ing", Defs.Ingredient.POISON], ["ing", Defs.Ingredient.ANTIDOTE], ["ing", Defs.Ingredient.SUGAR], ["ing", Defs.Ingredient.NOTHING]],
-		"text": "You get secret cards. Drag ONE into their cup.\nPOISON kills. ANTIDOTE cancels one poison. SUGAR hides the smell. PLAIN does nothing."},
-	{"title": "3. PLAY A DIRTY TRICK", "color": Color("4cc9f0"),
-		"icons": [["item", Defs.Item.SWAP], ["item", Defs.Item.SNIFF], ["item", Defs.Item.TOAST], ["item", Defs.Item.PEEK]],
-		"text": "Everyone secretly picks one item at the same time.\nSWAP two cups. SNIFF a cup for poison. TOAST makes someone drink NOW. PEEK at someone's cards."},
-	{"title": "4. LIE TO YOUR FRIENDS", "color": Color("c3a6ff"),
-		"icons": [["key", "V"], ["key", "Q"], ["key", "F"]],
-		"text": "Talk on Discord (or hold V). The TALK ABOUT THIS box gives you something to argue about. Accuse, bluff, beg, then hit READY TO DRINK. Dead friends can talk too, but every ghost has a secret GRUDGE, so they might be lying."},
-	{"title": "5. THE TOAST: CAKES!", "color": Color("3ddc97"),
+	{"title": "1. A POISONER IS AT THE TABLE", "color": Color("ff5c8a"),
 		"icons": [["ing", Defs.Ingredient.POISON], ["arrow"], ["ghost"]],
-		"text": "Everyone raises their cup. Press F to throw cake: hit a CUP and it spills, hit a FACE and they drop it. Then everyone drinks. More poison than antidote? You're dead, and you come back as a ghost (with cakes). LAST ONE ALIVE WINS."},
+		"text": "One guest is secretly the POISONER (two with 8 guests). Only they know. Everyone else is an innocent guest. Guests win by voting the poisoner out. The poisoner wins by poisoning guests until it's 1 on 1."},
+	{"title": "2. SERVE IN THE DARK", "color": Color("ffc93c"),
+		"icons": [["pot"], ["arrow"], ["cup"]],
+		"text": "Lights out! Click your teapot, click ANY other guest's cup, then drag one card from your tray into it. The poisoner has POISON. Guests have PLAIN, SUGAR and maybe the ANTIDOTE (it cancels poison). Nobody sees where anyone pours..."},
+	{"title": "3. ...BUT YOU GLIMPSE ONE POUR", "color": Color("c3a6ff"),
+		"icons": [["item", Defs.Item.PEEK], ["item", Defs.Item.SNIFF], ["item", Defs.Item.SWAP]],
+		"text": "When the lights come back you learn ONE thing: \"You saw Baron pour into Ada's cup.\" Then items: SNIFF a cup for poison, WATCH a guest to see where they poured, SWAP two cups."},
+	{"title": "4. THE TOAST", "color": Color("4cc9f0"),
+		"icons": [["key", "F"], ["cup"], ["ing", Defs.Ingredient.ANTIDOTE]],
+		"text": "Everyone raises their cup and drinks. Scared yours is poisoned? Press F to throw a cake at it and it spills. Whoever drank poison falls. The game never says who poured it."},
+	{"title": "5. THE MEETING + THE VOTE", "color": Color("3ddc97"),
+		"icons": [["key", "V"], ["arrow"], ["ghost"]],
+		"text": "Now talk (Discord, or hold V). \"Where did YOU pour?\" \"I saw Clara pour into Ada's cup!\" \"No, I poured sugar into Baron's!\" Someone is lying. Then vote: most votes gets thrown out and their role is shown. Dead guests stay quiet, like Among Us."},
 ]
 
 var _page := 0

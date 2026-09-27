@@ -27,6 +27,10 @@ static func port_of(steam_id: int) -> int:
 	return 31000 + steam_id % 1000
 
 
+func is_fake() -> bool:
+	return true
+
+
 func getSteamID() -> int:
 	return id
 

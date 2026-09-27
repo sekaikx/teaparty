@@ -27,6 +27,7 @@ var _steam := false
 var _steam_join := 0
 var _started := false
 var _took: Dictionary = {}
+var _serve: Dictionary = {}
 var _pace := false
 var _phase_time: Dictionary = {}
 var _cake_stats: Dictionary = {}
@@ -182,12 +183,18 @@ func _process(delta: float) -> void:
 		if ph == Defs.Phase.POUR or ph == Defs.Phase.DEAL:
 			_brain.new_round(Session.public)
 		var key := "%s_r%d" % [Defs.PHASE_NAMES[ph].to_lower().replace(" ", "_").replace("!", ""), int(Session.public.get("round", 0))]
-		if ph in [Defs.Phase.INTRO, Defs.Phase.POUR, Defs.Phase.ITEMS, Defs.Phase.TALK]:
+		if ph in [Defs.Phase.INTRO, Defs.Phase.POUR, Defs.Phase.ITEMS]:
 			_shot(key, 1.2)
+		elif ph == Defs.Phase.TALK:
+			_shot(key, 6.0)
 		elif ph == Defs.Phase.DRINK:
 			_shot(key + "_drinking", 5.0 / speed + 2.6)
 		elif ph == Defs.Phase.REVEAL:
 			_shot(key, 4.5)
+		elif ph == Defs.Phase.VOTE:
+			_shot(key, 1.0)
+		elif ph == Defs.Phase.EJECT:
+			_shot(key, 2.2)
 	_wait -= delta
 	if _wait > 0.0:
 		return
@@ -203,19 +210,22 @@ func _autoplay() -> void:
 	match Session.phase:
 		Defs.Phase.POUR:
 			if Session.am_alive() and not bool(Session.seat_info(Session.my_seat).get("poured", false)):
+				if _serve.is_empty():
+					_serve = _brain.choose_serve(priv, pub)
+				if _serve.is_empty():
+					return
 				if table and not table.tea_poured and not _took.has("pour%d" % pub.get("round", 0)):
 					_took["pour%d" % pub.get("round", 0)] = true
-					var cup := table.cup_at_seat(table.pour_target())
+					table.serve_to = int(_serve["target"])
+					var cup := table.cup_at_seat(table.serve_to)
 					table.pots[Session.my_seat].pour_into(cup.position, func() -> void:
 						cup.set_filled(true)
 						table.tea_poured = true)
 					return
 				if table and not table.tea_poured:
 					return
-				Session.request_pour(_brain.choose_pour(priv, pub))
-				var sp := _brain.choose_spike(priv, pub)
-				if sp >= 0:
-					Session.request_spike(sp)
+				Session.request_pour(int(_serve["index"]), int(_serve["target"]))
+				_serve = {}
 			elif not Session.am_alive() and int(Session.seat_info(Session.my_seat).get("rattles", 0)) > 0 and randf() < 0.3:
 				var t := _brain.choose_rattle(priv, pub)
 				if t >= 0:
@@ -230,11 +240,17 @@ func _autoplay() -> void:
 				_wait = 2.0 / speed
 		Defs.Phase.TALK:
 			if Session.am_alive() and not bool(Session.seat_info(Session.my_seat).get("ready", false)):
+				var c := _brain.next_claim(priv, pub)
+				if not c.is_empty():
+					Session.request_claim(c)
+					_wait = 1.5 / speed
+					return
 				if randf() < 0.3:
 					Session.request_emote(randi() % Defs.EMOTES.size())
-				if randf() < 0.5:
-					Session.request_throw(Vector3(randf_range(-1, 1), 1.3, randf_range(-1, 1)))
 				Session.request_ready_up()
+		Defs.Phase.VOTE:
+			if Session.am_alive() and not bool(Session.seat_info(Session.my_seat).get("voted", false)):
+				Session.request_vote(_brain.choose_vote(pub))
 
 
 func _shot(key: String, after: float) -> void:
