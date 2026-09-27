@@ -135,16 +135,21 @@ Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
 | V (hold) | Push to talk |
 | Q / middle mouse (hold) | Emote wheel |
 | F | Throw a cupcake at the point under the mouse (hit your raised cup at the toast to spill it) |
-| Enter | Ready to vote (in the meeting) |
+| R | Ready to vote (in the meeting) |
+| Enter / T | Open text chat (online, in the lobby and the match). Enter sends, Esc closes |
 | Right-drag / wheel | Look around / lean in |
 | Esc | Pause menu (also cancels an item) |
 
 ## Friendslop features
 
-- **Chunky guests.** Procedural, jointed humanoids: a big soft head, neck, barrel chest, belt,
-  upper and lower arms, oversized mitts, shorts, legs and boots, all made of pillowy rounded blocks.
-  Skin and hair colour come from the player's name. The googly pupils slosh around, the mouth flaps
-  when you talk on voice chat, and the eyebrows show mood. Hats and face accessories always fit.
+- **Jelly bean guests.** Each guest is one glossy jelly bean (head and body in a single rounded
+  shape) with stubby noodle arms and legs, round mitts, big googly eyes and blushing cheeks. They
+  wobble (squash and stretch) when they gesture, get bonked or climb back into their chair. Colour
+  comes from the player's name, plus a hair nub, a collar (bow tie, ruffle, pearls or scarf), and
+  the hat and face accessories from the wardrobe. The mouth flaps when you talk on voice chat.
+- **Text chat for players without a mic.** Press **Enter** (or **T**) online to type up to 140
+  characters. Lines show in the chat box and as a speech bubble over your bean. Ghosts chat only with
+  other ghosts, so the dead can't tip anyone off.
 - **Ragdolls you cause.** A cake to the face turns the guest into a ragdoll (11 rigid bodies
   joined with cone-twist limits). They flop off the chair, drop what they're holding, and 2 seconds later
   snap back upright and say "I'M FINE". Deaths use the same ragdoll but stay down for the rest of the

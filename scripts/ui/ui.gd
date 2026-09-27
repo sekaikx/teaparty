@@ -62,6 +62,12 @@ static func box(bg: Color, radius: int = 18, border: int = 4, shadow: int = 6, b
 	return sb
 
 
+## True while the player is typing in a text box (chat, names): game hotkeys must stay quiet.
+static func typing() -> bool:
+	var tree := Engine.get_main_loop() as SceneTree
+	return tree != null and tree.root.gui_get_focus_owner() is LineEdit
+
+
 static func panel(bg: Color = PLUM, radius: int = 26, pad: Vector4 = Vector4(26, 22, 26, 22)) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.add_theme_stylebox_override("panel", box(bg, radius, 5, 8, INK, pad))

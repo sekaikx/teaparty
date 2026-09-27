@@ -16,8 +16,9 @@ extends Node3D
 const SIT_BACK := 0.30          # the seated body sits this far behind the root (the chair goes there)
 const LOCAL_LAYER := 1 << 19    # parts your own first-person camera leaves out
 const SEAT_Y := 0.64            # pelvis height when seated
-const STAND_Y := 0.86           # pelvis height when standing
-const HEAD_R := 0.29            # half-size of the head (face features sit on +Z at this depth)
+const UPPER_K := 0.84           # the body, arms and head (everything on the waist) are scaled by this
+const STAND_Y := 0.54           # pelvis height when standing (short bean legs)
+const HEAD_R := 0.32            # half-size of the head (face features sit on +Z at this depth)
 ## Physics layers: 1 world, 16 ragdolls, 32 flying props, 64 living guests' hitboxes.
 const L_WORLD := 1
 const L_RAGDOLL := 16
@@ -65,6 +66,9 @@ var _kn_r: Node3D
 var _mouth: MeshInstance3D
 var _brows: Array[MeshInstance3D] = []
 var _eyes: Array[Dictionary] = []
+## The big jelly shapes (bottom, belly, head) that squash and stretch.
+var _jelly_parts: Array[MeshInstance3D] = []
+var _wobble := 0.0
 var _shirt: StandardMaterial3D
 var _skin_mat: StandardMaterial3D
 var _hat: Node3D
@@ -174,9 +178,8 @@ func _pivot(parent: Node3D, pos: Vector3, n: String) -> Node3D:
 
 func _build_rig(ghost: bool) -> void:
 	var skin := _skin()
-	var shirt_col: Color = skin.get("body", Color("ffe3b8"))
+	var body_col: Color = skin.get("body", Color("ffe3b8"))
 	var accent: Color = skin.get("accent", Color("ff8fab"))
-	var tone: Color = TONES[_hash() % TONES.size()]
 	var hair_col: Color = HAIR[(_hash() / 7) % HAIR.size()]
 	var build: Array = BUILDS[(_hash() / 13) % BUILDS.size()]
 	var belly: float = build[0]
@@ -184,33 +187,30 @@ func _build_rig(ghost: bool) -> void:
 	var outfit: StringName = OUTFITS[(_hash() / 29) % OUTFITS.size()]
 	var hairstyle: StringName = HAIRSTYLES[(_hash() / 61) % HAIRSTYLES.size()]
 	var g := Mats.ghost()
-	_shirt = _mat(shirt_col)
-	_skin_mat = _mat(tone, 0.6)
-	var shirt: Material = g if ghost else _shirt
-	var skin_m: Material = g if ghost else _skin_mat
-	var pants: Material = g if ghost else _mat(shirt_col.darkened(0.55).lerp(Color("2d2a4a"), 0.35), 0.7)
-	var glove: Material = g if ghost else _mat(Color("fbfaf4"), 0.5)
-	var boot: Material = g if ghost else _mat(Color("3a2a30"), 0.6)
+	# Jelly: one glossy colour for the whole bean, a lighter belly, white mitts, dark shoes.
+	_shirt = _jelly(body_col)
+	_skin_mat = _shirt
+	var jelly: Material = g if ghost else _shirt
+	var glove: Material = g if ghost else _jelly(Color("fbfaf4"), 0.3)
+	var shoe: Material = g if ghost else _mat(body_col.darkened(0.6).lerp(Color("2d2233"), 0.5), 0.5)
 	var ink := Mats.solid(Color("1d1128"), 0.4)
 	_rig = Node3D.new()
 	_rig.name = "Rig"
 	add_child(_rig)
 	model = _rig
-	# Pelvis (shorts) and legs.
+	_jelly_parts.clear()
+	# The bottom of the bean, and two stubby legs.
 	_hips = _pivot(_rig, Vector3(0, SEAT_Y, -SIT_BACK), "Hips")
-	_part(_hips, Vector3(0.5 * belly, 0.27, 0.33), pants, Vector3.ZERO, 0.4, Vector2(1.06, 1.0))
-	if not ghost and outfit == &"dress":
-		# A flared skirt over the hips (the legs still move freely under it).
-		Mats.mesh(_hips, Mats.softbox(Vector3(0.62 * belly, 0.34, 0.46), 0.5, Vector2(0.72, 0.8), 0.04), _mat(shirt_col.darkened(0.15)), Vector3(0, -0.08, 0.01))
+	# (The bean's body lives on the waist below, so bending at the hips reads as the bean folding.)
 	if not ghost:
-		_hip_l = _pivot(_hips, Vector3(0.13, -0.07, 0), "HipL")
-		_hip_r = _pivot(_hips, Vector3(-0.13, -0.07, 0), "HipR")
+		_hip_l = _pivot(_hips, Vector3(0.15, -0.08, 0.02), "HipL")
+		_hip_r = _pivot(_hips, Vector3(-0.15, -0.08, 0.02), "HipR")
 		for hp: Node3D in [_hip_l, _hip_r]:
-			_part(hp, Vector3(0.22, 0.38, 0.23), pants, Vector3(0, -0.16, 0), 0.4, Vector2(1.12, 1.1))
-			var kn := _pivot(hp, Vector3(0, -0.34, 0), "Knee")
-			_part(kn, Vector3(0.17, 0.36, 0.18), skin_m, Vector3(0, -0.16, 0), 0.45, Vector2(1.15, 1.15))
-			var an := _pivot(kn, Vector3(0, -0.34, 0), "Ankle")
-			_part(an, Vector3(0.2, 0.15, 0.34), boot, Vector3(0, -0.05, 0.07), 0.35, Vector2(0.95, 0.9))
+			_part(hp, Vector3(0.21, 0.32, 0.21), jelly, Vector3(0, -0.1, 0), 0.95)
+			var kn := _pivot(hp, Vector3(0, -0.2, 0), "Knee")
+			_part(kn, Vector3(0.2, 0.3, 0.2), jelly, Vector3(0, -0.07, 0), 0.95)
+			var an := _pivot(kn, Vector3(0, -0.19, 0), "Ankle")
+			_part(an, Vector3(0.22, 0.14, 0.3), shoe, Vector3(0, -0.02, 0.06), 0.75, Vector2(0.95, 0.9))
 			if hp == _hip_l:
 				_kn_l = kn
 			else:
@@ -220,65 +220,67 @@ func _build_rig(ghost: bool) -> void:
 		_hip_r = null
 		_kn_l = null
 		_kn_r = null
-		Mats.mesh(_hips, Mats.cylinder(0.24, 0.02, 0.6, 16), g, Vector3(0, -0.4, -0.05))
-	# Torso: a barrel chest in the shirt colour, collar and a bow tie in the accent colour.
+		Mats.mesh(_hips, Mats.cylinder(0.3, 0.02, 0.6, 16), g, Vector3(0, -0.36, -0.05))
+	# The middle of the bean: a round belly with a lighter patch.
 	_waist = _pivot(_hips, Vector3(0, 0.1, 0), "Waist")
-	_part(_waist, Vector3(0.6 * belly, 0.58, 0.4 * belly), shirt, Vector3(0, 0.29, 0), 0.56, Vector2(1.08, 0.96), 0.13)
+	# The whole bean above the hips is drawn a bit small so the table stays readable.
+	_waist.scale = Vector3.ONE * UPPER_K
+	# One tall bean from the seat up into the head (the head's dome covers its top), so the
+	# silhouette is a single smooth jelly bean with no waist.
+	_jelly_parts.append(_part(_waist, Vector3(0.78 * belly, 1.02, 0.68 * belly), jelly, Vector3(0, 0.26, 0), 0.94, Vector2(0.9, 0.92), 0.04))
 	if not ghost:
-		_build_outfit(outfit, shirt_col, accent, belly)
-	# Arms.
-	_sh_l = _pivot(_waist, Vector3(0.36, 0.48, 0), "ShoulderL")
-	_sh_r = _pivot(_waist, Vector3(-0.36, 0.48, 0), "ShoulderR")
+		var patch := Mats.mesh(_waist, Mats.sphere(0.22, 0.4, 18), _jelly(body_col.lerp(Color.WHITE, 0.22), 0.3), Vector3(0, 0.14, 0.29 * belly), Vector3.ZERO, Vector3(1.05 * belly, 0.95, 0.3))
+		patch.name = "Belly"
+		_build_outfit(outfit, body_col, accent, belly)
+	# Short noodle arms with round mitts.
+	_sh_l = _pivot(_waist, Vector3(0.37 * belly, 0.4, 0), "ShoulderL")
+	_sh_r = _pivot(_waist, Vector3(-0.37 * belly, 0.4, 0), "ShoulderR")
 	for sh: Node3D in [_sh_l, _sh_r]:
-		_part(sh, Vector3(0.19, 0.34, 0.19), shirt, Vector3(0, -0.13, 0), 0.5, Vector2(1.15, 1.15))
-		var el := _pivot(sh, Vector3(0, -0.3, 0), "Elbow")
-		_part(el, Vector3(0.14, 0.3, 0.14), skin_m, Vector3(0, -0.13, 0), 0.5)
-		var hand := _pivot(el, Vector3(0, -0.29, 0), "Hand")
-		_part(hand, Vector3(0.21, 0.2, 0.15), glove, Vector3(0, -0.08, 0.01), 0.55, Vector2(1.0, 1.0), 0.1)
+		_part(sh, Vector3(0.16, 0.28, 0.16), jelly, Vector3(0, -0.08, 0), 0.97)
+		var el := _pivot(sh, Vector3(0, -0.17, 0), "Elbow")
+		_part(el, Vector3(0.15, 0.26, 0.15), jelly, Vector3(0, -0.07, 0), 0.97)
+		var hand := _pivot(el, Vector3(0, -0.18, 0), "Hand")
+		_part(hand, Vector3(0.2, 0.2, 0.17), glove, Vector3(0, -0.06, 0.01), 0.95)
 		var side := 1.0 if sh == _sh_l else -1.0
-		_part(hand, Vector3(0.07, 0.11, 0.07), glove, Vector3(-0.1 * side, -0.02, 0.05), 0.6)
+		_part(hand, Vector3(0.08, 0.1, 0.08), glove, Vector3(-0.09 * side, -0.01, 0.05), 0.95)
 		if sh == _sh_l:
 			_el_l = el
 		else:
 			_el_r = el
 			_hand_r = hand
-	# Neck and the big head.
-	_neck = _pivot(_waist, Vector3(0, 0.56, 0), "Neck")
-	_part(_neck, Vector3(0.17, 0.14, 0.17), skin_m, Vector3(0, 0.03, 0), 0.6)
-	_head = _pivot(_neck, Vector3(0, 0.08, 0), "Head")
+	# The top of the bean is the head (no neck): it just folds forward and back.
+	_neck = _pivot(_waist, Vector3(0, 0.5, 0), "Neck")
+	_head = _pivot(_neck, Vector3(0, 0.04, 0), "Head")
 	head_anchor = _head
 	var face := Node3D.new()
 	face.name = "Face"
-	face.position = Vector3(0, 0.27, 0)
+	face.position = Vector3(0, 0.22, 0)
 	_head.add_child(face)
-	_part(face, Vector3(0.6, 0.58, 0.54), skin_m, Vector3.ZERO, 0.62, Vector2(0.95, 0.95), 0.06)
+	_jelly_parts.append(_part(face, Vector3(0.72, 0.66, 0.64), jelly, Vector3.ZERO, 0.94, Vector2(0.9, 0.9)))
 	face.scale = Vector3.ONE * head_k
 	if not ghost:
 		for side in [1.0, -1.0]:
-			_part(face, Vector3(0.07, 0.13, 0.09), skin_m, Vector3(0.3 * side, -0.01, -0.01), 0.6)
-			# Warm cheeks.
-			Mats.mesh(face, Mats.sphere(0.05), Mats.solid(tone.lerp(Color("ff6f8a"), 0.45), 0.8), Vector3(0.19 * side, -0.08, HEAD_R - 0.035), Vector3.ZERO, Vector3(1.3, 0.8, 0.3))
-		_part(face, Vector3(0.1, 0.1, 0.08), _mat(tone.darkened(0.12)), Vector3(0, -0.04, HEAD_R - 0.01), 0.7)
-		_build_hair(face, hairstyle, _mat(hair_col, 0.8), 1.0)
-	# Googly eyes.
+			Mats.mesh(face, Mats.sphere(0.06), Mats.solid(body_col.lerp(Color("ff6f8a"), 0.55), 0.8), Vector3(0.21 * side, -0.07, HEAD_R - 0.03), Vector3.ZERO, Vector3(1.3, 0.8, 0.3))
+		_build_hair(face, hairstyle, _jelly(hair_col, 0.4), 1.0)
+	# Big googly eyes.
 	_eyes.clear()
 	for side in [1.0, -1.0]:
 		var eye := Node3D.new()
-		eye.position = Vector3(0.12 * side, 0.07, HEAD_R - 0.02)
+		eye.position = Vector3(0.13 * side, 0.07, HEAD_R - 0.03)
 		face.add_child(eye)
-		Mats.mesh(eye, Mats.sphere(0.095, 0.19, 16), Mats.solid(Color.WHITE, 0.2), Vector3.ZERO, Vector3.ZERO, Vector3(1, 1, 0.55))
-		var pupil := Mats.mesh(eye, Mats.sphere(0.05, 0.1, 12), ink, Vector3(0, 0, 0.04), Vector3.ZERO, Vector3(1, 1, 0.5))
+		Mats.mesh(eye, Mats.sphere(0.115, 0.23, 18), Mats.solid(Color.WHITE, 0.15), Vector3.ZERO, Vector3.ZERO, Vector3(1, 1.08, 0.55))
+		var pupil := Mats.mesh(eye, Mats.sphere(0.058, 0.116, 12), ink, Vector3(0, 0, 0.05), Vector3.ZERO, Vector3(1, 1, 0.5))
 		_eyes.append({"node": pupil, "off": Vector2(randf_range(-0.3, 0.3), -0.3), "vel": Vector2.ZERO})
 	_brows.clear()
 	for side in [1.0, -1.0]:
-		_brows.append(Mats.mesh(face, Mats.softbox(Vector3(0.13, 0.035, 0.03), 0.5), ink if not ghost else g, Vector3(0.12 * side, 0.19, HEAD_R)))
-	_mouth = Mats.mesh(face, Mats.sphere(0.06, 0.12, 12), Mats.solid(Color("3b0d1e"), 0.5), Vector3(0, -0.14, HEAD_R - 0.02), Vector3.ZERO, Vector3(1.9, 0.45, 0.4))
+		_brows.append(Mats.mesh(face, Mats.softbox(Vector3(0.13, 0.035, 0.03), 0.5), ink if not ghost else g, Vector3(0.13 * side, 0.21, HEAD_R - 0.01)))
+	_mouth = Mats.mesh(face, Mats.sphere(0.06, 0.12, 12), Mats.solid(Color("3b0d1e"), 0.5), Vector3(0, -0.13, HEAD_R - 0.02), Vector3.ZERO, Vector3(1.9, 0.45, 0.4))
 	if not ghost:
 		_build_face(face, StringName(str(look.get("face", &"none"))))
 	var hat := Hats.build(StringName(str(look.get("hat", &"none"))))
 	if hat:
-		hat.scale = Vector3.ONE * 0.56
-		hat.position = Vector3(0, 0.24, -0.02)
+		hat.scale = Vector3.ONE * 0.6
+		hat.position = Vector3(0, 0.28, -0.02)
 		face.add_child(hat)
 		if ghost:
 			_ghostify(hat)
@@ -290,7 +292,7 @@ func _build_rig(ghost: bool) -> void:
 		_hitbox.set_meta(&"guest", self)
 		var hs := CollisionShape3D.new()
 		var sph := SphereShape3D.new()
-		sph.radius = 0.34
+		sph.radius = 0.36
 		hs.shape = sph
 		_hitbox.add_child(hs)
 		face.add_child(_hitbox)
@@ -298,7 +300,7 @@ func _build_rig(ghost: bool) -> void:
 		_body_box.collision_layer = L_HITBOX
 		_body_box.collision_mask = 0
 		_body_box.set_meta(&"guest", self)
-		RoomBuilder._box_shape(_body_box, Vector3(0.6, 0.6, 0.38), Vector3(0, 0.29, 0))
+		RoomBuilder._box_shape(_body_box, Vector3(0.72, 0.6, 0.6), Vector3(0, 0.25, 0))
 		_waist.add_child(_body_box)
 	if ghost:
 		_set_shadows(_rig, false)
@@ -307,67 +309,68 @@ func _build_rig(ghost: bool) -> void:
 		_apply_local_layers()
 
 
-## The outfit over the barrel chest: a bow tie, a waistcoat with buttons, a dress collar or a
-## striped cardigan. Always the colours from the wardrobe ("body" + "accent").
-func _build_outfit(outfit: StringName, shirt_col: Color, accent: Color, belly: float) -> void:
+## Glossy jelly: shiny with a strong rim light (no ink outline: jelly is smooth).
+func _jelly(c: Color, rough: float = 0.22) -> StandardMaterial3D:
+	var m := _mat(c, rough)
+	m.next_pass = null
+	m.rim = 0.45
+	m.rim_tint = 0.6
+	m.clearcoat_enabled = true
+	m.clearcoat = 0.5
+	m.clearcoat_roughness = 0.2
+	return m
+
+
+## Bean accessories at the "neck" line, in the wardrobe accent colour: a bow tie, a ruffled
+## collar, a scarf, or an apron.
+func _build_outfit(outfit: StringName, _body_col: Color, accent: Color, belly: float) -> void:
 	var acc := _mat(accent)
-	var dark := _mat(shirt_col.darkened(0.35))
-	var vest := _mat(accent.darkened(0.25).lerp(Color("3a2a4a"), 0.3))
+	var y := 0.46
+	var z := 0.36 * belly
 	match outfit:
 		&"waistcoat":
-			# The waistcoat: a darker wrap over the front and sides, open in a V at the top.
-			Mats.mesh(_waist, Mats.softbox(Vector3(0.62 * belly, 0.44, 0.41 * belly), 0.52, Vector2(1.06, 0.97), 0.13), vest, Vector3(0, 0.24, 0.002))
-			for side in [1.0, -1.0]:
-				Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.2, 0.04), 0.4, Vector2(0.4, 1.0)), _shirt, Vector3(0.05 * side, 0.46, 0.2 * belly), Vector3(0, 0, 25 * side))
-			for i in 3:
-				Mats.mesh(_waist, Mats.sphere(0.022), Mats.gold(), Vector3(0.0, 0.16 + i * 0.1, 0.215 * belly))
-			# A pocket watch chain.
-			Mats.mesh(_waist, Mats.torus(0.05, 0.062, 12), Mats.gold(), Vector3(0.12 * belly, 0.2, 0.2 * belly), Vector3(80, 0, 20))
-			Mats.mesh(_waist, Mats.softbox(Vector3(0.14, 0.06, 0.05), 0.5), acc, Vector3(0, 0.5, 0.2))
+			# A ruffled collar.
+			for i in 8:
+				var a := PI * (0.15 + 0.7 * i / 7.0)
+				Mats.mesh(_waist, Mats.sphere(0.075, 0.1), _mat(Color("fff6e6")), Vector3(cos(a) * 0.34 * belly, y + 0.02, sin(a) * 0.33 * belly), Vector3.ZERO, Vector3(1.2, 0.7, 1.2))
+			Mats.mesh(_waist, Mats.sphere(0.035), Mats.gold(), Vector3(0, y - 0.06, z + 0.01))
 		&"dress":
-			# A round collar and a ribbon.
-			Mats.mesh(_waist, Mats.torus(0.12, 0.17, 18), _mat(Color("fff6e6")), Vector3(0, 0.56, 0.02), Vector3(8, 0, 0))
-			Mats.mesh(_waist, Mats.softbox(Vector3(0.52 * belly, 0.06, 0.36 * belly), 0.5), acc, Vector3(0, 0.05, 0))
-			Mats.mesh(_waist, Mats.sphere(0.045), acc, Vector3(0, 0.07, 0.2 * belly))
+			# A pearl necklace with a pendant.
+			for i in 11:
+				var a := PI * (0.12 + 0.76 * i / 10.0)
+				Mats.mesh(_waist, Mats.sphere(0.03), Mats.porcelain(Color("fbf6ee")), Vector3(cos(a) * 0.34 * belly, y - 0.02 - sin(a) * 0.06, sin(a) * 0.35 * belly))
+			Mats.mesh(_waist, Mats.sphere(0.045), acc, Vector3(0, y - 0.1, z + 0.02))
 		&"cardigan":
-			# Three bands around the belly (sized past its curve so they show) and a button strip.
-			for i in 3:
-				var y := 0.14 + i * 0.13
-				var bulge := 1.0 + 0.13 * (1.0 - pow((y - 0.29) / 0.29, 2.0))
-				Mats.mesh(_waist, Mats.softbox(Vector3(0.63 * belly * bulge, 0.05, 0.43 * belly * bulge), 0.5, Vector2(1.03, 1.0)), acc, Vector3(0, y, 0))
-			Mats.mesh(_waist, Mats.softbox(Vector3(0.06, 0.5, 0.05), 0.5), dark, Vector3(0, 0.27, 0.225 * belly))
-			for i in 3:
-				Mats.mesh(_waist, Mats.sphere(0.022), _mat(Color("fff6e6")), Vector3(0, 0.15 + i * 0.12, 0.25 * belly))
+			# A cosy scarf.
+			Mats.mesh(_waist, Mats.torus(0.3 * belly, 0.42 * belly, 20), acc, Vector3(0, y, 0), Vector3(6, 0, 0))
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.26, 0.05), 0.5), acc, Vector3(0.12, y - 0.14, z + 0.02), Vector3(0, 0, -12))
 		_:
-			# The classic: belt and a bow tie.
-			Mats.mesh(_waist, Mats.softbox(Vector3(0.5 * belly, 0.05, 0.34 * belly), 0.5), _mat(accent.darkened(0.2)), Vector3(0, 0.03, 0))
-			Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.07, 0.05), 0.5), acc, Vector3(0, 0.5, 0.2))
+			# The classic bow tie.
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.08, 0.07, 0.05), 0.5), acc, Vector3(0, y - 0.02, z))
 			for side in [1.0, -1.0]:
-				Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.09, 0.04), 0.4, Vector2(0.5, 1.0)), acc, Vector3(0.07 * side, 0.5, 0.2), Vector3(0, 0, 90 * side))
+				Mats.mesh(_waist, Mats.softbox(Vector3(0.11, 0.1, 0.05), 0.4, Vector2(0.5, 1.0)), acc, Vector3(0.075 * side, y - 0.02, z - 0.01), Vector3(0, 0, 90 * side))
 
 
-## Hairstyles (hats sit over the top; the back and sides still show).
-func _build_hair(face: Node3D, style: StringName, hair: Material, k: float) -> void:
+## A little something on top of the bean (hats sit over it).
+func _build_hair(face: Node3D, style: StringName, hair: Material, _k: float) -> void:
 	match style:
 		&"side_part":
-			_part(face, Vector3(0.62 * k, 0.14, 0.52 * k), hair, Vector3(0.02, 0.26 * k, -0.02), 0.45, Vector2(0.85, 0.9))
-			_part(face, Vector3(0.22, 0.12, 0.3), hair, Vector3(0.2 * k, 0.24 * k, 0.12), 0.6)
+			# A swirly curl.
+			Mats.mesh(face, Mats.torus(0.03, 0.08, 12), hair, Vector3(0.02, 0.34, 0.04), Vector3(0, 0, 90))
 		&"bun":
-			_part(face, Vector3(0.6 * k, 0.12, 0.5 * k), hair, Vector3(0, 0.26 * k, -0.04), 0.5, Vector2(0.8, 0.85))
-			Mats.mesh(face, Mats.sphere(0.12), hair, Vector3(0, 0.28 * k, -0.24 * k))
+			Mats.mesh(face, Mats.sphere(0.11), hair, Vector3(0, 0.33, -0.12))
 		&"curls":
-			for i in 7:
-				var a := TAU * i / 7.0
-				Mats.mesh(face, Mats.sphere(0.1), hair, Vector3(cos(a) * 0.2 * k, 0.27 * k + sin(a * 2.0) * 0.02, sin(a) * 0.16 * k - 0.04))
+			for i in 3:
+				Mats.mesh(face, Mats.sphere(0.06), hair, Vector3(-0.08 + i * 0.08, 0.33 - absf(i - 1) * 0.02, 0.04))
 		&"bald":
-			for side in [1.0, -1.0]:
-				_part(face, Vector3(0.08, 0.16, 0.2), hair, Vector3(0.29 * k * side, 0.02, -0.08), 0.6)
+			# A leaf sprout.
+			Mats.mesh(face, Mats.cylinder(0.012, 0.015, 0.1, 6), _mat(Color("3f8f3a")), Vector3(0, 0.37, 0))
+			Mats.mesh(face, Mats.sphere(0.06, 0.02), _mat(Color("5fbf4a")), Vector3(0.05, 0.42, 0), Vector3(0, 0, -30), Vector3(1.4, 1.0, 0.8))
 		&"long":
-			_part(face, Vector3(0.62 * k, 0.14, 0.52 * k), hair, Vector3(0, 0.26 * k, -0.04), 0.45, Vector2(0.85, 0.9))
-			_part(face, Vector3(0.6 * k, 0.5, 0.14), hair, Vector3(0, -0.02, -0.25 * k), 0.5, Vector2(1.0, 0.9))
+			for side in [1.0, -1.0]:
+				Mats.mesh(face, Mats.sphere(0.08), hair, Vector3(0.3 * side, 0.12, -0.06))
 		_:
-			_part(face, Vector3(0.58 * k, 0.14, 0.4 * k), hair, Vector3(0, 0.25 * k, -0.08), 0.5, Vector2(0.8, 0.9))
-			_part(face, Vector3(0.14, 0.12, 0.12), hair, Vector3(0.08, 0.32 * k, 0.08), 0.6)
+			Mats.mesh(face, Mats.cylinder(0.02, 0.05, 0.12, 8), hair, Vector3(0.02, 0.37, 0.02), Vector3(0, 0, -18))
 
 
 func _set_shadows(n: Node, on: bool) -> void:
@@ -540,7 +543,21 @@ func is_down() -> bool:
 # ---------------------------------------------------------------- posing
 
 ## Upper-body gesture: cheer, no, point, think, yes, plead, laugh, sip, interact, shrug, wave, spook.
+## Jelly: a slow breathing squash, plus a springy jiggle after every bump (wobble()).
+func _squash(delta: float) -> void:
+	_wobble = maxf(0.0, _wobble - delta * 1.4)
+	var b := sin(_t * 2.1) * 0.014 + sin(_t * 17.0) * _wobble * 0.1
+	for m in _jelly_parts:
+		if is_instance_valid(m):
+			m.scale = Vector3(1.0 - b * 0.6, 1.0 + b, 1.0 - b * 0.6)
+
+
+func wobble(amount: float = 1.0) -> void:
+	_wobble = maxf(_wobble, amount)
+
+
 func gesture(kind: StringName, seconds: float = -1.0) -> void:
+	wobble(0.6)
 	if (not alive and not is_ghost) or _ragdolling:
 		return
 	var map := {&"Cheer": &"cheer", &"Interact": &"interact", &"ual/Idle_FoldArms": &"think", &"Spellcast_Shoot": &"point",
@@ -680,6 +697,7 @@ func _process(delta: float) -> void:
 	_t += delta
 	if not _ragdoll_parts.is_empty() and _corpse_head:
 		_googly(_corpse_head, _corpse_eyes, delta)
+	_squash(delta)
 	if _rig == null or not is_instance_valid(_rig) or _ragdolling or (not alive and not is_ghost and _shake <= 0.0):
 		return
 	if _gesture != &"":
@@ -797,6 +815,7 @@ func _googly(head: Node3D, eyes: Array[Dictionary], delta: float) -> void:
 
 ## A cake to the face without toppling: the head snaps back and the eyes spin.
 func bonk(from_dir: Vector3, frosting: Color) -> void:
+	wobble(1.0)
 	if not alive or _head == null or _ragdolling:
 		return
 	var local := _neck.global_transform.basis.inverse() * from_dir
@@ -1062,7 +1081,8 @@ func _go_ragdoll(temporary: bool) -> Dictionary:
 		node.get_parent().remove_child(node)
 		rb.add_child(node)
 		node.transform = Transform3D(Basis.from_scale(gt.basis.get_scale()), Vector3.ZERO)
-		RoomBuilder._box_shape(rb, size, offset)
+		var k := gt.basis.get_scale().x
+		RoomBuilder._box_shape(rb, size * k, offset * k)
 		bodies[key] = rb
 		_ragdoll_parts.append(rb)
 		return rb
@@ -1070,17 +1090,17 @@ func _go_ragdoll(temporary: bool) -> Dictionary:
 		var hat_rb: RigidBody3D = make.call(_hat, "hat", Vector3(0.3, 0.2, 0.3), Vector3(0, 0.1, 0), 0.2)
 		hat_rb.apply_central_impulse(Vector3(randf_range(-0.5, 0.5), 1.4, randf_range(-0.5, 0.5)))
 		hat_rb.apply_torque_impulse(Vector3(randf_range(-0.1, 0.1), randf_range(-0.1, 0.1), randf_range(-0.1, 0.1)))
-	make.call(_head, "head", Vector3(0.56, 0.54, 0.5), Vector3(0, 0.27, 0), 1.6)
-	make.call(_el_l, "fore_l", Vector3(0.14, 0.44, 0.14), Vector3(0, -0.21, 0), 0.5)
-	make.call(_el_r, "fore_r", Vector3(0.14, 0.44, 0.14), Vector3(0, -0.21, 0), 0.5)
-	make.call(_sh_l, "up_l", Vector3(0.15, 0.3, 0.15), Vector3(0, -0.14, 0), 0.6)
-	make.call(_sh_r, "up_r", Vector3(0.15, 0.3, 0.15), Vector3(0, -0.14, 0), 0.6)
-	make.call(_kn_l, "shin_l", Vector3(0.17, 0.42, 0.22), Vector3(0, -0.2, 0.03), 0.8)
-	make.call(_kn_r, "shin_r", Vector3(0.17, 0.42, 0.22), Vector3(0, -0.2, 0.03), 0.8)
-	make.call(_hip_l, "thigh_l", Vector3(0.2, 0.34, 0.22), Vector3(0, -0.16, 0), 1.0)
-	make.call(_hip_r, "thigh_r", Vector3(0.2, 0.34, 0.22), Vector3(0, -0.16, 0), 1.0)
-	make.call(_waist, "torso", Vector3(0.56, 0.6, 0.34), Vector3(0, 0.3, 0), 4.0)
-	make.call(_hips, "pelvis", Vector3(0.46, 0.25, 0.3), Vector3.ZERO, 3.0)
+	make.call(_head, "head", Vector3(0.64, 0.6, 0.56), Vector3(0, 0.22, 0), 1.8)
+	make.call(_el_l, "fore_l", Vector3(0.14, 0.34, 0.14), Vector3(0, -0.14, 0), 0.4)
+	make.call(_el_r, "fore_r", Vector3(0.14, 0.34, 0.14), Vector3(0, -0.14, 0), 0.4)
+	make.call(_sh_l, "up_l", Vector3(0.14, 0.2, 0.14), Vector3(0, -0.08, 0), 0.4)
+	make.call(_sh_r, "up_r", Vector3(0.14, 0.2, 0.14), Vector3(0, -0.08, 0), 0.4)
+	make.call(_kn_l, "shin_l", Vector3(0.17, 0.26, 0.24), Vector3(0, -0.11, 0.03), 0.6)
+	make.call(_kn_r, "shin_r", Vector3(0.17, 0.26, 0.24), Vector3(0, -0.11, 0.03), 0.6)
+	make.call(_hip_l, "thigh_l", Vector3(0.18, 0.22, 0.18), Vector3(0, -0.1, 0), 0.7)
+	make.call(_hip_r, "thigh_r", Vector3(0.18, 0.22, 0.18), Vector3(0, -0.1, 0), 0.7)
+	make.call(_waist, "torso", Vector3(0.66, 0.56, 0.56), Vector3(0, 0.25, 0), 4.0)
+	make.call(_hips, "pelvis", Vector3(0.6, 0.38, 0.5), Vector3(0, 0.04, 0), 3.0)
 	# Joints: [parent body, child body, pivot node (position), swing, twist]
 	var spec := [
 		["torso", "head", bodies["head"], 45.0, 30.0],
@@ -1125,6 +1145,7 @@ func _go_ragdoll(temporary: bool) -> Dictionary:
 
 ## Back to the seat after a knockdown: every part glides home, then the rig takes over again.
 func _recover() -> void:
+	wobble(1.0)
 	if not _ragdolling or not alive:
 		return
 	_recovering = true

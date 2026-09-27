@@ -93,6 +93,20 @@ func items_resolving() -> bool:
 	return phase == P.ITEMS and bool(public.get("resolving", false))
 
 
+## Host side: the seat of a peer id (-1 if none), and whether that seat is alive.
+func seat_of_peer(id: int) -> int:
+	if _rules:
+		return _rules.seat_of_id(id)
+	for i in seat_count():
+		if int(seat_info(i).get("id", -1)) == id:
+			return i
+	return -1
+
+
+func seat_alive_host(seat: int) -> bool:
+	return _rules.is_alive(seat) if _rules else bool(seat_info(seat).get("alive", true))
+
+
 func seat_name(seat: int) -> String:
 	return String(seat_info(seat).get("name", "?"))
 

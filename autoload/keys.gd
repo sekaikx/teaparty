@@ -6,7 +6,8 @@ const BINDINGS := {
 	&"emote_wheel": [KEY_Q],
 	&"peek_tray": [KEY_TAB],
 	&"pause": [KEY_ESCAPE],
-	&"ready_up": [KEY_ENTER, KEY_KP_ENTER],
+	&"ready_up": [KEY_R],
+	&"chat": [KEY_ENTER, KEY_KP_ENTER, KEY_T],
 	&"throw_cake": [KEY_F],
 }
 

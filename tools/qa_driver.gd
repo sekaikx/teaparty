@@ -64,6 +64,8 @@ func _ready() -> void:
 	Session.match_over.connect(_on_over)
 	_pace = "--pace" in OS.get_cmdline_user_args()
 	Session.game_event.connect(_count_event)
+	Net.chat_received.connect(func(m: Dictionary) -> void:
+		print("QA CHAT got from=%s ghost=%s me_alive=%s: %s" % [m["name"], m["ghost"], Session.am_alive(), m["text"]]))
 	_deadline = 600.0
 	if "--solo" in OS.get_cmdline_user_args():
 		_shot("title", 1.0)
@@ -241,6 +243,10 @@ func _autoplay() -> void:
 					Session.request_item(choice["index"], choice["targets"])
 				_wait = 2.0 / speed
 		Defs.Phase.TALK:
+			var ck := "chat%d" % int(pub.get("round", 0))
+			if not _took.has(ck):
+				_took[ck] = true
+				Net.send_chat(("boo from beyond, round %d" if not Session.am_alive() else "hello, round %d") % int(pub.get("round", 0)))
 			if Session.am_alive() and not bool(Session.seat_info(Session.my_seat).get("ready", false)):
 				var c := _brain.next_claim(priv, pub)
 				if not c.is_empty():

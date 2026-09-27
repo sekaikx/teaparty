@@ -85,6 +85,7 @@ var _vote: PanelContainer
 var _vote_box: GridContainer
 var _vote_sig := ""
 var _talking: Array = []
+var _chat: ChatBox
 var _board: PanelContainer
 var _board_box: VBoxContainer
 ## This round's meeting claims and the reveal, for the board.
@@ -109,6 +110,10 @@ func setup(p_table: TableView) -> void:
 	_build_bottom()
 	_build_center()
 	_build_meeting()
+	_chat = ChatBox.new()
+	_root.add_child(_chat)
+	Ui.pin(_chat, Vector2(0, 1), Vector2(0, 1), Vector2(14, -14))
+	Net.chat_received.connect(_on_chat_bubble)
 	_emotes = EmoteWheel.new()
 	_root.add_child(_emotes)
 	_emotes.chosen.connect(func(i: int) -> void: Session.request_emote(i))
@@ -340,12 +345,24 @@ func _process(delta: float) -> void:
 	if _drag_ghost:
 		_drag_ghost.global_position = mouse - _drag_ghost.size * 0.5
 	_cake_label.text = ("THROW CAKE x%d" if Session.am_alive() else "GHOST CAKE x%d") % Session.cakes_left()
+	# Keep the chat above the tray while the tray is up.
+	var lift := (_tray_panel.size.y + 12.0) if _tray_panel.visible else 0.0
+	_chat.position.y = get_viewport().get_visible_rect().size.y - 14.0 - lift - _chat.size.y
+	if Ui.typing():
+		return
 	if Input.is_action_just_pressed(&"emote_wheel") and not _pause.visible:
 		_emotes.open()
 	if Input.is_action_just_released(&"emote_wheel"):
 		_emotes.close(true)
 	if Input.is_action_just_pressed(&"ready_up") and Session.phase == P.TALK and Session.am_alive():
 		Session.request_ready_up()
+
+
+## Chat lines also pop up as a speech bubble over the guest who said them.
+func _on_chat_bubble(msg: Dictionary) -> void:
+	var seat := int(msg.get("seat", -1))
+	if table and seat >= 0 and seat < table.guests.size():
+		table.guests[seat].say(String(msg.get("text", "")).left(60), 4.0, Color("3a5a9a") if msg.get("ghost", false) else Ui.INK)
 
 
 func _watch_fps(delta: float) -> void:
@@ -399,7 +416,7 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed(&"pause") and _drag:
 		_cancel_drag()
 		get_viewport().set_input_as_handled()
-	elif event.is_action_pressed(&"pause") and table.targeting < 0 and _drag == null:
+	elif event.is_action_pressed(&"pause") and table.targeting < 0 and _drag == null and not _chat.is_open():
 		_pause.visible = not _pause.visible
 		Sfx.play(&"pop", -6.0)
 		get_viewport().set_input_as_handled()

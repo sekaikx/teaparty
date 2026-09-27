@@ -14,6 +14,11 @@ signal connection_failed(reason: String)
 signal left_lobby(reason: String)
 ## What a Steam join is doing right now ("Calling the host..."), for the online panel.
 signal join_progress(text: String)
+## A text chat line: {name, text, ghost, seat, id}.
+signal chat_received(msg: Dictionary)
+
+const CHAT_MAX := 140
+var _chat_ready: Dictionary = {}
 
 const DEFAULT_PORT := 24565
 const MAX_PEERS := 7
@@ -196,6 +201,62 @@ func _fail(reason: String) -> void:
 		Steamworks.leave_lobby()
 	_reset()
 	connection_failed.emit(reason)
+
+
+# ---------------------------------------------------------------- text chat (for players without a mic)
+
+## Send a chat line. Everyone at the table sees it; a ghost's line only reaches other ghosts
+## (the dead don't talk to the living).
+func send_chat(text: String) -> void:
+	var t := text.replace("\n", " ").replace("\r", " ").strip_edges().left(CHAT_MAX)
+	if t == "":
+		return
+	if multiplayer.multiplayer_peer == null or is_host():
+		_host_chat(my_id(), t)
+	else:
+		_rq_chat.rpc_id(1, t)
+
+
+@rpc("any_peer", "reliable")
+func _rq_chat(text: String) -> void:
+	if is_host():
+		_host_chat(multiplayer.get_remote_sender_id(), String(text).replace("\n", " ").strip_edges().left(CHAT_MAX))
+
+
+func _host_chat(from_id: int, text: String) -> void:
+	if text == "":
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now < float(_chat_ready.get(from_id, 0.0)):
+		return
+	_chat_ready[from_id] = now + 0.6
+	var nm := String(roster.get(from_id, {}).get("name", "Guest"))
+	var seat := Session.seat_of_peer(from_id)
+	if seat >= 0:
+		nm = Session.seat_name(seat)
+	var ghost := Session.running and seat >= 0 and not Session.seat_alive_host(seat)
+	var msg := {"id": from_id, "name": nm, "text": text, "ghost": ghost, "seat": seat}
+	if not ghost or multiplayer.multiplayer_peer == null or is_solo:
+		if multiplayer.multiplayer_peer == null or is_solo:
+			_chat(msg)
+		else:
+			_chat.rpc(msg)
+		return
+	# Ghost line: only to the other ghosts (and the host, if they're a ghost too).
+	for id: int in roster:
+		if id >= BOT_ID_BASE:
+			continue
+		var s := Session.seat_of_peer(id)
+		if s >= 0 and not Session.seat_alive_host(s):
+			if id == my_id():
+				_chat(msg)
+			else:
+				_chat.rpc_id(id, msg)
+
+
+@rpc("authority", "call_local", "reliable")
+func _chat(msg: Dictionary) -> void:
+	chat_received.emit(msg)
 
 
 # ---------------------------------------------------------------- peers

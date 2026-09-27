@@ -26,6 +26,11 @@ func _ready() -> void:
 	outer.add_child(title)
 	var row := Ui.hbox(18)
 	outer.add_child(row)
+	# Text chat for players without a mic.
+	if not Net.is_solo:
+		var chat := ChatBox.new()
+		add_child(chat)
+		Ui.pin(chat, Vector2(0, 1), Vector2(0, 1), Vector2(14, -14))
 
 	var left := Ui.panel(Ui.PLUM, 26)
 	left.custom_minimum_size = Vector2(460, 470)

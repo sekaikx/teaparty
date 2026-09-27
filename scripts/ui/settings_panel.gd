@@ -41,7 +41,7 @@ func _ready() -> void:
 	for line in [
 		"Left click: teapot, cups, item cards, targets",
 		"Drag cards from your secret tray onto a cup (hover it or hold TAB to see them)",
-		"%s talk  -  %s emotes  -  %s throw cake  -  ENTER ready" % [Keys.label(&"push_to_talk"), Keys.label(&"emote_wheel"), Keys.label(&"throw_cake")],
+		"%s talk  -  %s emotes  -  %s throw cake  -  ENTER / T chat  -  %s ready to vote" % [Keys.label(&"push_to_talk"), Keys.label(&"emote_wheel"), Keys.label(&"throw_cake"), Keys.label(&"ready_up")],
 		"Right-drag to look around (the cursor hides while you look), wheel to lean in",
 		"F11 or Alt+Enter: fullscreen / window",
 	]:

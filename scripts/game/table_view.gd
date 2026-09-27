@@ -384,7 +384,7 @@ func _process(delta: float) -> void:
 			_held.follow(to_local(p), delta)
 	_update_highlights()
 	_update_arrow(delta)
-	if Input.is_action_just_pressed(&"throw_cake") and not get_viewport().gui_get_focus_owner() is LineEdit:
+	if Input.is_action_just_pressed(&"throw_cake") and not Ui.typing():
 		throw_cake()
 	if layout.outdoor:
 		_bird_timer -= delta
