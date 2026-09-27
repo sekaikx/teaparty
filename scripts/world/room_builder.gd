@@ -42,7 +42,7 @@ func build(room: StringName, count: int) -> Node3D:
 			cloth = Color("fbf8f0")
 			trim = Color("7fb0d8")
 			outdoor = true
-			music = &"waltz"
+			music = &"carefree"
 			_garden()
 		&"banquet":
 			table_radii = Vector2(3.1, 1.45) if count > 6 else Vector2(2.6, 1.4)

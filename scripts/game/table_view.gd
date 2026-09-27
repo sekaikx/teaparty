@@ -914,7 +914,7 @@ func set_lights_out(on: bool) -> void:
 		_dark_tw.kill()
 	_dark_tw = create_tween()
 	if on:
-		Sfx.play(&"whoosh", -4.0)
+		Sfx.play(&"candle_out", -3.0)
 		_blow_candles(true)
 		_dark_tw.tween_method(_apply_dark, _dark, 1.0, 0.9).set_trans(Tween.TRANS_SINE)
 	else:
@@ -925,7 +925,7 @@ func set_lights_out(on: bool) -> void:
 		_dark_tw.tween_method(_apply_dark, 0.15, 0.6, 0.08)
 		_dark_tw.tween_method(_apply_dark, 0.6, 0.0, 0.25)
 		_dark_tw.tween_callback(func() -> void: _blow_candles(false))
-		Sfx.play(&"pop", -6.0)
+		Sfx.play(&"switch", -4.0)
 
 
 func is_dark() -> bool:

@@ -229,6 +229,9 @@ python3 tools/audio/synth_tea_audio.py                                 # regener
 - Icons: glyphs from **Phosphor Icons** (MIT, `assets/icons/src/LICENSE-phosphor.txt`) on our own
   candy badges; `python3 tools/make_icons.py` rebuilds them. The app icon is rendered from the game's
   own character (`tools/app_icon.gd`; the 1024 px master for store pages is in `store/`).
+- Music: "Sneaky Snitch" and "Carefree" by **Kevin MacLeod** (incompetech.com), CC BY 4.0.
+  Recorded sound effects from **Freesound** contributors and **Kenney**, CC0; every file and
+  author is listed in `audio/CREDITS.md` (`tools/audio/import_recorded.py` cuts them).
 - Made with **Godot Engine** (MIT) and **GodotSteam** (MIT). The in-game **CREDITS** screen lists
   every notice.
 - Guests, hats, faces, cups, teapots, cakes, the UI style and the tea sounds are made

@@ -29,12 +29,15 @@ const SOUNDS := {
 	&"flutter": "res://audio/sfx/wing_flutter.ogg",
 	&"bonk": "res://audio/sfx/bonk.ogg", &"splat": "res://audio/sfx/splat.ogg",
 	&"slide_whistle": "res://audio/sfx/slide_whistle.ogg", &"pop": "res://audio/sfx/pop.ogg",
-	&"whoosh": "res://audio/sfx/whoosh.ogg", &"boing": "res://audio/sfx/boing.ogg", &"kazoo": "res://audio/sfx/kazoo.ogg",
+	&"whoosh": "res://audio/sfx/whoosh.ogg", &"switch": "res://audio/sfx/switch.ogg",
+	&"candle_out": "res://audio/sfx/candle_out.ogg", &"boing": "res://audio/sfx/boing.ogg", &"kazoo": "res://audio/sfx/kazoo.ogg",
 	&"bird_1": "res://audio/ambience/bird_01.ogg", &"bird_2": "res://audio/ambience/bird_03.ogg",
 	&"bird_3": "res://audio/ambience/bird_05.ogg", &"owl": "res://audio/ambience/owl_01.ogg",
 }
 const MUSIC := {
-	&"waltz": "res://audio/music/waltz_loop.ogg",
+	# Menu and lobby: "Sneaky Snitch"; the garden: "Carefree" (Kevin MacLeod, CC BY 4.0).
+	&"waltz": "res://audio/music/sneaky_snitch.ogg",
+	&"carefree": "res://audio/music/carefree.ogg",
 	&"evening": "res://audio/music/evening_bed_loop.ogg",
 	&"tavern": "res://audio/music/tavern_tune_loop.ogg",
 }
