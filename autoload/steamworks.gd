@@ -173,6 +173,17 @@ func _process(_delta: float) -> void:
 			join_lobby(id)
 
 
+## Mirrors a local achievement to Steam (needs the achievement set up on the game's Steam page;
+## harmless otherwise).
+func unlock_achievement(id: String) -> void:
+	if not available or steam == null:
+		return
+	if steam.has_method("setAchievement"):
+		steam.call("setAchievement", id)
+	if steam.has_method("storeStats"):
+		steam.call("storeStats")
+
+
 func friendly_name() -> String:
 	return persona if available else ""
 

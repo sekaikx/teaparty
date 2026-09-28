@@ -5,12 +5,13 @@ extends SceneTree
 ## claims, vote) that must end with winners. Prints the win balance per table size.
 
 var failures := 0
-var SIM_RULES := {} if OS.get_environment("NOROLES") == "" else ({"inspector": false, "physician": false} if OS.get_environment("NOROLES") == "1" else {"physician": false})
+var SIM_RULES := ({} if OS.get_environment("SIMMODE") == "" else {"mode": StringName(OS.get_environment("SIMMODE"))}) if OS.get_environment("NOROLES") == "" else ({"inspector": false, "physician": false} if OS.get_environment("NOROLES") == "1" else {"physician": false})
+var timeouts := 0
 
 
 func _init() -> void:
 	_unit()
-	for n in [4, 5, 6, 7, 8]:
+	for n in ([4, 5, 6, 7, 8] if OS.get_environment("SIMN") == "" else [int(OS.get_environment("SIMN"))]):
 		_simulate(n, 300)
 	print("FAILURES: %d" % failures)
 	quit(1 if failures > 0 else 0)
@@ -188,6 +189,21 @@ func _roles() -> void:
 	var r5 := TeaRules.new()
 	r5.setup(_players(5), {}, 12)
 	check(r5.has_role(TeaRules.INSPECTOR) and not r5.has_role(TeaRules.PHYSICIAN), "5 guests: Inspector only")
+	check(not r.has_role(TeaRules.BUTLER), "6 guests: no Butler yet")
+	# 7 guests: the Butler, who wins by surviving, whoever else wins.
+	var r7 := TeaRules.new()
+	r7.setup(_players(7), {}, 15)
+	var b := -1
+	for s in 7:
+		if r7.seats[s]["role"] == TeaRules.BUTLER:
+			b = s
+	check(b >= 0, "7 guests: a Butler")
+	for s in r7.poisoner_seats():
+		r7.seats[s]["alive"] = false
+	var wb := r7.check_winner()
+	check(wb["over"] and (wb["winners"] as Array).has(b), "a living Butler wins with the guests")
+	r7.seats[b]["alive"] = false
+	check(not (r7.check_winner()["winners"] as Array).has(b), "a dead Butler doesn't")
 	var r4 := TeaRules.new()
 	r4.setup(_players(4), {}, 13)
 	check(not r4.has_role(TeaRules.INSPECTOR), "4 guests: no special roles")
@@ -324,5 +340,8 @@ func _simulate(n: int, count: int) -> void:
 		check(not winners.is_empty(), "game %d has winners" % game)
 		if not winners.is_empty() and not r.is_poisoner(int(winners[0])):
 			guest_wins += 1
+	if timeouts > 0:
+		print("  (%d games hit the round limit)" % timeouts)
+	timeouts = 0
 	print("%d guests: %d games, avg %.1f rounds, guests win %d%%, ejects hit the poisoner %d%%" % [n, count,
 		float(rounds_total) / count, 100 * guest_wins / count, 100 * correct_ejects / maxi(ejects, 1)])

@@ -123,6 +123,9 @@ def main(raw):
     write("sfx/ghost.ogg", level(fade(trim(R("ghost.ogg")), 0.05, 0.5), -19))
     write("sfx/switch.ogg", level(fade(trim(R("switch_on.ogg")), 0.001, 0.03), -16))
     write("sfx/candle_out.ogg", level(fade(loudest(trim(R("candle_out.ogg")), 0.9), 0.01, 0.3), -18))
+    # Emote voices (Freesound, CC0).
+    for n, secs in (("giggle", 0.8), ("yay", 1.3), ("ooh", 1.2), ("hmm", 1.3), ("wow", 1.1), ("oops", 0.5), ("eek", 1.2)):
+        write("ui/v_%s.ogg" % n, level(fade(trim(R("v_%s.ogg" % n))[: int(secs * SR)], 0.004, 0.12), -17))
     # Kenney (CC0): real porcelain and wood.
     write("sfx/sit_down.ogg", level(fade(trim(R("kenney_impactWood_light_001.ogg"))), -20))
     write("sfx/card.ogg", level(fade(trim(R("kenney_card-place-1.ogg"))), -20))

@@ -128,6 +128,21 @@ func solo(bots: int = 3) -> void:
 		add_bot()
 
 
+## The daily challenge: a party with bots under today's special rules.
+func daily(id: String = "") -> void:
+	var d := Defs.daily_today()
+	for e: Dictionary in Defs.DAILY:
+		if e["id"] == id:
+			d = e
+	solo(int(d.get("bots", 5)))
+	for k: String in d.get("rules", {}):
+		rules[k] = d["rules"][k].duplicate() if d["rules"][k] is Array else d["rules"][k]
+	rules["daily"] = String(d["id"])
+	for i in int(d.get("bots", 5)) + 1 - _seat_count():
+		add_bot()
+	start_match.call_deferred()
+
+
 ## PLAY NOW: straight into a 6-guest party with bots, no lobby.
 func quick_play() -> void:
 	solo(5)

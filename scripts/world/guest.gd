@@ -774,6 +774,8 @@ func gesture(kind: StringName, seconds: float = -1.0) -> void:
 			_set_mood(&"angry", _gesture_len)
 		&"plead":
 			_set_mood(&"sad", _gesture_len)
+		&"shock":
+			_set_mood(&"shock", _gesture_len)
 		&"think":
 			_set_mood(&"sly", _gesture_len)
 
@@ -886,6 +888,12 @@ func _target_pose() -> Dictionary:
 		&"spook":
 			_arm(p, "l", Vector3(0.3, 0.6, 1), 0.3)
 			_arm(p, "r", Vector3(-0.3, 0.6, 1), 0.3)
+		&"shock":
+			# Hands to the cheeks, leaning back.
+			_arm(p, "l", Vector3(0.35, 0.55, 0.6), 2.3)
+			_arm(p, "r", Vector3(-0.35, 0.55, 0.6), 2.3)
+			p["lean"] = -0.3
+			p["hip_y"] += absf(sin(k * 0.7)) * 0.03
 	if _shake > 0.0:
 		p["twist"] = sin(_t * 60.0) * 0.14 * _shake
 		p["head"] += Vector3(sin(_t * 47.0), sin(_t * 53.0), sin(_t * 41.0)) * 0.22 * _shake

@@ -4,7 +4,7 @@ extends Control
 
 signal chosen(index: int)
 
-const RADIUS := 150.0
+const RADIUS := 178.0
 const INNER := 48.0
 
 var _center := Vector2.ZERO
@@ -64,12 +64,12 @@ func _draw() -> void:
 		var a := -PI / 2.0 + TAU * i / n
 		var pos := _center + Vector2.from_angle(a) * RADIUS
 		var on := i == _pick
-		var r := 44.0 if on else 36.0
+		var r := 44.0 if on else 37.0
 		draw_circle(pos + Vector2(0, 4), r + 3, Ui.INK)
 		draw_circle(pos, r + 3, Ui.INK)
 		draw_circle(pos, r, cols[i % cols.size()] if on else Ui.CREAM)
 		var text: String = Defs.EMOTES[i]["name"]
-		var fs := 17 if on else 15
+		var fs := 16 if on else 14
 		var w := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, fs).x
 		draw_string(_font, pos + Vector2(-w * 0.5, 6), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Ui.INK)
 	var hint := "EMOTE"

@@ -14,7 +14,7 @@ func _ready() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
 	# Every room is open to everyone, so the menu shows a different one each time.
-	var room: StringName = [&"parlor", &"garden", &"banquet"][rng.randi_range(0, 2)]
+	var room: StringName = [&"parlor", &"garden", &"banquet", &"greenhouse"][rng.randi_range(0, 3)]
 	add_child(rb.build(room, 5))
 	for i in 5:
 		var g := Guest.new()

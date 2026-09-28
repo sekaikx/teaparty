@@ -44,6 +44,13 @@ func build(room: StringName, count: int) -> Node3D:
 			outdoor = true
 			music = &"carefree"
 			_garden()
+		&"greenhouse":
+			table_radii = Vector2(1.45, 1.45) if count <= 6 else Vector2(1.9, 1.6)
+			cloth = Color("eef4e6")
+			trim = Color("3f8f5a")
+			music = &"evening"
+			ambience = &"crickets"
+			_greenhouse()
 		&"banquet":
 			table_radii = Vector2(3.1, 1.45) if count > 6 else Vector2(2.6, 1.4)
 			cloth = Color("7a1d2c")
@@ -523,6 +530,141 @@ func _garden() -> void:
 			flag.position = p - Vector3(0, 0.16, 0)
 			flag.rotation = Vector3(0, -atan2(b.z - a.z, b.x - a.x), PI)
 			root.add_child(flag)
+
+
+## The Glasshouse: an octagon of glass on white iron frames under a glass roof, a terracotta
+## floor, potted ferns and flowers, lanterns, moonlight and fireflies.
+func _greenhouse() -> void:
+	_environment(Color("0b1030"), Color("4a5a9a"), 0.55, true)
+	for n in root.find_children("*", "WorldEnvironment", true, false):
+		var env: Environment = (n as WorldEnvironment).environment
+		var sky := env.sky.sky_material as ProceduralSkyMaterial
+		sky.sky_top_color = Color("0b1030")
+		sky.sky_horizon_color = Color("2f3a70")
+		sky.ground_horizon_color = Color("1b2030")
+		sky.ground_bottom_color = Color("0a0c14")
+		sky.sky_energy_multiplier = 0.7
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_color = Color("56679f")
+	var moon := DirectionalLight3D.new()
+	moon.light_color = Color("a9bcff")
+	moon.light_energy = 0.55
+	moon.shadow_enabled = true
+	moon.shadow_bias = 0.08
+	moon.shadow_normal_bias = 2.0
+	moon.rotation_degrees = Vector3(-55, 30, 0)
+	root.add_child(moon)
+	# Terracotta tiles.
+	var t1 := Mats.solid(Color("b8643e"), 0.85)
+	var t2 := Mats.solid(Color("9c5334"), 0.85)
+	Mats.mesh(root, Mats.box(Vector3(30, 0.1, 30)), Mats.solid(Color("4a3a2e"), 0.9), Vector3(0, -0.05, 0))
+	for x in range(-6, 7):
+		for z in range(-6, 7):
+			if Vector2(x, z).length() < 6.6:
+				Mats.mesh(root, Mats.box(Vector3(0.96, 0.02, 0.96)), t1 if (x + z) % 2 == 0 else t2, Vector3(x, 0.01, z))
+	# Glass walls and the roof: panes on a white iron frame.
+	var glass := StandardMaterial3D.new()
+	glass.albedo_color = Color(0.72, 0.86, 1.0, 0.16)
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.roughness = 0.05
+	glass.metallic_specular = 1.0
+	glass.rim_enabled = true
+	glass.rim = 0.4
+	var iron := Mats.solid(Color("eef0ea"), 0.4)
+	var r := 6.9
+	var h := 3.6
+	for i in 8:
+		var a0 := TAU * i / 8.0
+		var a1 := TAU * (i + 1) / 8.0
+		var p0 := Vector3(cos(a0) * r, 0, sin(a0) * r)
+		var p1 := Vector3(cos(a1) * r, 0, sin(a1) * r)
+		var mid := (p0 + p1) * 0.5
+		var w := p0.distance_to(p1)
+		var yaw := -atan2(p1.z - p0.z, p1.x - p0.x)
+		var pane := Mats.mesh(root, Mats.box(Vector3(w, h, 0.04)), glass, mid + Vector3(0, h * 0.5, 0))
+		pane.rotation.y = yaw
+		pane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# Frame: a post at each corner, mullions and a rail.
+		Mats.mesh(root, Mats.box(Vector3(0.14, h, 0.14)), iron, p0 + Vector3(0, h * 0.5, 0))
+		for k in [1, 2]:
+			var m := Mats.mesh(root, Mats.box(Vector3(0.06, h, 0.07)), iron, p0.lerp(p1, k / 3.0) + Vector3(0, h * 0.5, 0))
+			m.rotation.y = yaw
+		for y in [1.0, h]:
+			var rail := Mats.mesh(root, Mats.box(Vector3(w, 0.08, 0.1)), iron, mid + Vector3(0, y, 0))
+			rail.rotation.y = yaw
+		# A roof panel sloping up to the lantern at the top.
+		var top := Vector3(0, h + 2.6, 0)
+		var rp := MeshInstance3D.new()
+		var im := ImmediateMesh.new()
+		im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+		for v: Vector3 in [p0 + Vector3(0, h, 0), p1 + Vector3(0, h, 0), top, top, p1 + Vector3(0, h, 0), p0 + Vector3(0, h, 0)]:
+			im.surface_add_vertex(v)
+		im.surface_end()
+		rp.mesh = im
+		rp.material_override = glass
+		rp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(rp)
+		# A rib up the roof.
+		var rib_mid := (p0 + Vector3(0, h, 0) + top) * 0.5
+		var rib := Mats.mesh(root, Mats.box(Vector3(0.08, (top - p0 - Vector3(0, h, 0)).length(), 0.08)), iron, rib_mid)
+		rib.look_at_from_position(rib_mid, top, Vector3(cos(a0 + PI / 2), 0, sin(a0 + PI / 2)))
+		rib.rotate_object_local(Vector3.RIGHT, PI / 2)
+	# Plants in terracotta pots around the edge, flowers in between.
+	var bush := _load(GARDEN + "bush.glb")
+	var flowers := [_load(GARDEN + "flowers.glb"), _load(GARDEN + "flowers_b.glb")]
+	var pot := Mats.solid(Color("c0673f"), 0.8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 91
+	for i in 14:
+		var a := TAU * (i + 0.5) / 14.0
+		var p := Vector3(cos(a) * 5.7, 0, sin(a) * 5.7)
+		Mats.mesh(root, Mats.cylinder(0.5, 0.36, 0.7, 14), pot, p + Vector3(0, 0.35, 0))
+		var plant: PackedScene = bush if i % 2 == 0 else flowers[(i / 2) % 2]
+		if plant:
+			var pl := plant.instantiate() as Node3D
+			pl.position = p + Vector3(0, 0.62, 0)
+			pl.rotation.y = rng.randf() * TAU
+			pl.scale = Vector3.ONE * (1.25 if i % 2 == 0 else 1.1)
+			root.add_child(pl)
+	for i in 10:
+		var a := rng.randf() * TAU
+		var f: PackedScene = flowers[i % 2]
+		if f:
+			var fl := f.instantiate() as Node3D
+			fl.position = Vector3(cos(a), 0, sin(a)) * rng.randf_range(3.6, 4.8)
+			fl.rotation.y = rng.randf() * TAU
+			fl.scale = Vector3.ONE * rng.randf_range(0.6, 0.85)
+			root.add_child(fl)
+	# Hanging lanterns (warm light against the cold moon).
+	for i in 4:
+		var a := TAU * i / 4.0 + 0.4
+		var p := Vector3(cos(a) * 3.2, 3.0, sin(a) * 3.2)
+		Mats.mesh(root, Mats.cylinder(0.01, 0.01, 1.6, 4), Mats.solid(Color("2a2a2a"), 0.5), p + Vector3(0, 0.95, 0))
+		Mats.mesh(root, Mats.cylinder(0.16, 0.2, 0.34, 8), Mats.gold(), p)
+		Mats.mesh(root, Mats.sphere(0.12), Mats.glow(Color("ffc56a"), 3.0), p - Vector3(0, 0.02, 0))
+		var l := OmniLight3D.new()
+		l.light_color = Color("ffb35a")
+		l.light_energy = 0.9
+		l.omni_range = 4.5
+		l.position = p - Vector3(0, 0.1, 0)
+		root.add_child(l)
+	# Fireflies drifting between the plants.
+	var ff := CPUParticles3D.new()
+	ff.amount = 36
+	ff.lifetime = 6.0
+	ff.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	ff.emission_box_extents = Vector3(5.5, 1.2, 5.5)
+	ff.position = Vector3(0, 1.6, 0)
+	ff.gravity = Vector3.ZERO
+	ff.initial_velocity_min = 0.05
+	ff.initial_velocity_max = 0.2
+	ff.spread = 180.0
+	var q := SphereMesh.new()
+	q.radius = 0.022
+	q.height = 0.044
+	q.material = Mats.glow(Color("d6ff7a"), 6.0)
+	ff.mesh = q
+	root.add_child(ff)
 
 
 func _banquet() -> void:

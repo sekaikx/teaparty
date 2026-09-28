@@ -19,7 +19,7 @@ const DRINK_TIME := 5.0
 const REVEAL_TIME := 4.0
 const REVEAL_PER_DEATH := 2.0
 ## Someone thrown out: the yeet, the role reveal.
-const EJECT_TIME := 5.5
+const EJECT_TIME := 8.0
 ## Seconds between each locked-in item playing out.
 const ITEM_STEP := 1.3
 const END_DELAY := 1.0
@@ -163,6 +163,11 @@ func host_start(players: Array, p_rules: Dictionary) -> void:
 			if _rules.seats[i]["role"] == debug_role and me >= 0 and i != me:
 				_rules.seats[i]["role"] = _rules.seats[me]["role"]
 				_rules.seats[me]["role"] = debug_role
+				# (Hit List: the target moves with the role, and nobody is their own target.)
+				var h: int = _rules.seats[i]["hit"]
+				_rules.seats[i]["hit"] = -1
+				_rules.seats[me]["hit"] = i if h == me else h
+				break
 	_bots.clear()
 	_bot_wait.clear()
 	_bot_chatter.clear()
@@ -269,6 +274,10 @@ func _process(delta: float) -> void:
 		P.DRINK:
 			if _timer <= 0.0:
 				var drinks := _rules.drink_all()
+				if not _history.is_empty():
+					for d in drinks:
+						if d["died"] or d.get("revived", false) or d.get("saved", false):
+							(_history[-1]["drinks"] as Array).append({"seat": int(d["seat"]), "died": bool(d["died"]), "revived": bool(d.get("revived", false))})
 				var deaths := 0
 				for d in drinks:
 					if d["died"]:
@@ -295,11 +304,10 @@ func _process(delta: float) -> void:
 				var res := _rules.tally()
 				res["type"] = "vote_result"
 				_emit(res)
-				if int(res["ejected"]) >= 0:
-					var ej := int(res["ejected"])
-					var caught: bool = res["role"] == TeaRules.POISONER
-					_emit({"type": "moments", "list": [{"title": "CAUGHT THE POISONER!" if caught else "WRONG GUEST!",
-						"sub": "%s %s" % [_nm(ej), "WAS a poisoner" if caught else "was innocent... the poisoner is still here"]}]})
+				# (The HUD's role reveal is the big moment now: "NAME WAS... THE POISONER!")
+				if not _history.is_empty():
+					_history[-1]["ejected"] = int(res["ejected"])
+					_history[-1]["ejected_role"] = String(res.get("role", ""))
 				_set_phase(P.EJECT, EJECT_TIME if int(res["ejected"]) >= 0 else 3.0)
 		P.EJECT:
 			if _timer <= 0.0:
@@ -341,8 +349,17 @@ func _set_phase(p: int, seconds: float) -> void:
 	_push(seconds)
 
 
+## Every round, for the replay card at the end: who poured what where, the items, who fell, who
+## was thrown out. Only shown once the match is over (it's all secret until then).
+var _history: Array = []
+
+
 func _start_round() -> void:
 	_rules.start_round()
+	if _rules.round_no == 1:
+		_history = []
+	_history.append({"round": _rules.round_no, "twist": String(_rules.twist), "pours": [], "items": [], "drinks": [],
+		"ejected": -1, "ejected_role": ""})
 	_cakes.clear()
 	_pending_end = {}
 	_round_log.clear()
@@ -359,6 +376,10 @@ func _start_round() -> void:
 
 ## The serve is over: everyone glimpsed one pour. Then the items.
 func _after_serve() -> void:
+	if not _history.is_empty():
+		for seat in _rules.alive_seats():
+			if int(_rules.seats[seat]["served"]) >= 0:
+				(_history[-1]["pours"] as Array).append([seat, int(_rules.seats[seat]["dropped"]), int(_rules.seats[seat]["served"])])
 	var sightings := _rules.deal_sightings()
 	for seat: int in sightings:
 		var sg: Dictionary = sightings[seat]
@@ -384,6 +405,12 @@ var debug_role: StringName = &""
 
 
 func _resolve_items() -> void:
+	if not _history.is_empty():
+		for d: Dictionary in [_rules.picks, _rules.role_picks]:
+			for seat: int in d:
+				var pk: Dictionary = d[seat]
+				if not pk.is_empty():
+					(_history[-1]["items"] as Array).append([seat, int(pk["item"]), (pk["targets"] as Array).duplicate()])
 	_steps = _rules.resolve_items()
 	# Role cards (Inspect, Watch Over) play out in secret and at once: no public step and no
 	# pause that could give away who holds them.
@@ -391,6 +418,10 @@ func _resolve_items() -> void:
 		if step.get("secret", false):
 			for ev: Dictionary in step["private"]:
 				_emit_private(int(step["seat"]), ev)
+			# (Anonymous public effects, like the Butler's cups moving, still show.)
+			for ev: Dictionary in step["public"]:
+				_emit(ev)
+				_round_log.append(ev)
 			_steps.erase(step)
 	if _steps.is_empty():
 		_after_items()
@@ -573,9 +604,10 @@ func _end_match(w: Dictionary) -> void:
 			"role": s["role"], "team": s["team"], "kills": s["kills"], "rounds_survived": s["rounds_survived"],
 			"sniffs": s["sniffs"], "toasts": s["toasts"], "swaps": s["swaps"], "peeks": s["peeks"],
 			"rattles_used": s["rattles_used"], "died_round": s["died_round"], "cos": s["cos"], "ejected": s["ejected"],
+			"good_votes": s["good_votes"], "inspects": s["inspects"], "inspect_hits": int(s.get("inspect_hits", 0)), "revives": s["revives"],
 			"fun": _fun.get(seats_out.size(), {})})
 	var res := {"winners": w["winners"], "reason": w["reason"], "seats": seats_out, "rounds": _rules.round_no,
-		"mode": _rules.mode(), "awards": _awards()}
+		"mode": _rules.mode(), "awards": _awards(), "history": _history.duplicate(true)}
 	_set_phase(P.MATCH_END, 0.0)
 	_finish.rpc(res)
 	_rules = null
@@ -596,6 +628,15 @@ func _finish(res: Dictionary) -> void:
 			mine += 1
 	var fun: Dictionary = me.get("fun", {})
 	res["award"] = Profile.award(me, won, me.get("role", &"guest") == TeaRules.POISONER, mine, fun) if not me.is_empty() else {}
+	# The daily challenge pays a bonus the first time you finish it each day.
+	var daily := String(match_rules.get("daily", ""))
+	var today := Time.get_date_string_from_system()
+	if daily != "" and String(Profile.settings.get("daily_done", "")) != today:
+		Profile.coins += 150
+		Profile.set_setting("daily_done", today)
+		res["daily_bonus"] = 150
+	res["daily"] = daily
+	res["achievements"] = Achievements.check(res, my_seat)
 	match_over.emit(res)
 
 

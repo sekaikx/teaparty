@@ -67,7 +67,15 @@ func _ready() -> void:
 	Net.chat_received.connect(func(m: Dictionary) -> void:
 		print("QA CHAT got from=%s ghost=%s me_alive=%s: %s" % [m["name"], m["ghost"], Session.am_alive(), m["text"]]))
 	_deadline = 600.0
-	if "--solo" in OS.get_cmdline_user_args():
+	var daily_id := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--daily"):
+			daily_id = a.get_slice("=", 1) if "=" in a else "today"
+	if daily_id != "":
+		await get_tree().create_timer(1.5).timeout
+		Net.daily("" if daily_id == "today" else daily_id)
+		print("QA DAILY %s players=%d rules=%s" % [daily_id, Net.roster.size(), str(Net.rules)])
+	elif "--solo" in OS.get_cmdline_user_args():
 		_shot("title", 1.0)
 		await get_tree().create_timer(1.5).timeout
 		Net.solo()
@@ -159,7 +167,16 @@ func _on_over(res: Dictionary) -> void:
 		print("QA PACE rounds=%d match=%.0fs per-round avg: %s" % [_rounds, total, ", ".join(parts)])
 		print("QA CAKES %s awards=%s" % [str(_cake_stats), str(res.get("awards", []))])
 	_shot("results", 2.5)
+	print("QA ACHIEVEMENTS %s" % str(res.get("achievements", [])))
+	print("QA HISTORY rounds=%d pours=%d" % [(res.get("history", []) as Array).size(),
+		(res.get("history", []) as Array).reduce(func(acc: int, r: Dictionary) -> int: return acc + (r["pours"] as Array).size(), 0)])
 	await get_tree().create_timer(3.5).timeout
+	if shots != "":
+		for rs in get_tree().root.find_children("*", "ResultsScreen", true, false):
+			rs.call(&"_replay", res)
+		await get_tree().create_timer(0.8).timeout
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s/99_replay.png" % shots)
 	if matches_done >= matches_wanted:
 		print("QA DONE %d matches" % matches_done)
 		get_tree().quit(0)
@@ -203,7 +220,7 @@ func _process(delta: float) -> void:
 		elif ph == Defs.Phase.VOTE:
 			_shot(key, 1.0)
 		elif ph == Defs.Phase.EJECT:
-			_shot(key, 2.2)
+			_shot(key, 4.3)
 	_wait -= delta
 	if _wait > 0.0:
 		return

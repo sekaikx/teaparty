@@ -26,6 +26,7 @@ const POISONER := &"poisoner"
 const GUEST := &"guest"
 const INSPECTOR := &"inspector"
 const PHYSICIAN := &"physician"
+const BUTLER := &"butler"
 
 var rng := RandomNumberGenerator.new()
 var rules: Dictionary = Defs.default_rules()
@@ -45,6 +46,8 @@ var votes: Dictionary = {}
 var protected: Dictionary = {}
 ## This round's twist (&"" for none) and the gossip it spread.
 var twist: StringName = &""
+## How many poisoners this match (two with 8 guests, or in Rival Poisoners at 6+).
+var n_poisoners := 1
 var gossip: Dictionary = {}
 
 
@@ -68,7 +71,7 @@ func setup(players: Array, p_rules: Dictionary, seed_value: int) -> void:
 			"ejected": false, "evidence": [],
 			"kills": 0, "rounds_survived": 0, "sniffs": 0, "toasts": 0, "swaps": 0, "peeks": 0,
 			"rattles_used": 0, "good_votes": 0,
-			"inspects": 0, "revives": 0, "last_protect": -1, "self_protected": false,
+			"inspects": 0, "revives": 0, "last_protect": -1, "self_protected": false, "hit": -1,
 		})
 		cups[i] = {"id": i, "owner": i, "contents": [], "tea": false, "drunk": false}
 		cup_at.append(i)
@@ -76,14 +79,27 @@ func setup(players: Array, p_rules: Dictionary, seed_value: int) -> void:
 	var order: Array = range(seats.size())
 	_shuffle(order)
 	var np := mini(poisoner_count(seats.size()), seats.size())
+	if mode() == &"rivals" and seats.size() >= 6:
+		np = 2
+	n_poisoners = np
 	for n in np:
 		seats[order[n]]["role"] = POISONER
 	# The special innocents, from the rest of the shuffled order.
 	var next := np
-	for r: StringName in [INSPECTOR, PHYSICIAN]:
+	for r: StringName in [INSPECTOR, PHYSICIAN, BUTLER]:
 		if bool(rules.get(String(r), true)) and seats.size() >= int(Defs.ROLES[r]["min_players"]) and next < seats.size():
 			seats[order[next]]["role"] = r
 			next += 1
+	# Hit List: every poisoner draws a secret target from the other guests.
+	if mode() == &"hitlist":
+		var pool: Array = []
+		for i in seats.size():
+			if not is_poisoner(i):
+				pool.append(i)
+		_shuffle(pool)
+		for p in poisoner_seats():
+			if not pool.is_empty():
+				seats[p]["hit"] = pool.pop_back()
 
 
 ## The role card a seat gets every round (-1 for none).
@@ -185,7 +201,9 @@ func start_round() -> void:
 	gossip = {}
 	# Most rounds bring a twist (never the first, so a first game starts plain).
 	twist = &""
-	if bool(rules.get("twists", true)) and round_no >= 2 and rng.randf() < 0.65:
+	if String(rules.get("force_twist", "")) != "":
+		twist = StringName(rules["force_twist"])
+	elif bool(rules.get("twists", true)) and round_no >= 2 and rng.randf() < 0.65:
 		var ids: Array = Defs.TWISTS.keys()
 		twist = ids[rng.randi_range(0, ids.size() - 1)]
 	for seat in seats.size():
@@ -208,7 +226,9 @@ func start_round() -> void:
 	var vial := living_p[rng.randi_range(0, living_p.size() - 1)] if not living_p.is_empty() else -1
 	for seat in alive:
 		if is_poisoner(seat):
-			seats[seat]["hand"] = [I.POISON, I.SUGAR, I.NOTHING] if seat == vial else [I.SUGAR, I.NOTHING, I.NOTHING]
+			# Rival poisoners each bring their own vial.
+			var armed := seat == vial or mode() == &"rivals"
+			seats[seat]["hand"] = [I.POISON, I.SUGAR, I.NOTHING] if armed else [I.SUGAR, I.NOTHING, I.NOTHING]
 		else:
 			innocents.append(seat)
 			var hand: Array = []
@@ -217,12 +237,13 @@ func start_round() -> void:
 			seats[seat]["hand"] = hand
 	# One antidote a round (two at a big table with two poisoners).
 	_shuffle(innocents)
-	for n in mini(2 if poisoner_count(seats.size()) >= 2 else 1, innocents.size()):
+	for n in mini(2 if n_poisoners >= 2 else 1, innocents.size()):
 		(seats[innocents[n]]["hand"] as Array)[0] = I.ANTIDOTE
 	for seat in alive:
 		(seats[seat]["hand"] as Array).sort()
 		seats[seat]["items"] = []
-		for n in int(rules["items_per_round"]) + (1 if twist == &"favours" else 0):
+		# A hunted guest (Hit List) gets an extra item to stay alive with.
+		for n in int(rules["items_per_round"]) + (1 if twist == &"favours" else 0) + (1 if is_hunted(seat) else 0):
 			_give_item(seats[seat])
 		var rc := role_card(seat)
 		if rc >= 0:
@@ -348,7 +369,7 @@ func deal_sightings() -> Dictionary:
 # in a fixed order: sniffs and watches first (information), then swaps (the cups move).
 
 const ITEM_ORDER := [Defs.Item.PROTECT, Defs.Item.INSPECT, Defs.Item.SNIFF, Defs.Item.PEEK, Defs.Item.LEAVES,
-	Defs.Item.SWAP, Defs.Item.FRESH, Defs.Item.TOAST]
+	Defs.Item.SWAP, Defs.Item.TIDY, Defs.Item.FRESH, Defs.Item.TOAST]
 
 ## seat -> {"index": item index, "item": item, "targets": Array} or {} for a pass.
 var picks: Dictionary = {}
@@ -411,7 +432,7 @@ func item_error(seat: int, item: int, targets: Array) -> String:
 		if not is_alive(t):
 			return "Only living guests."
 	match item:
-		IT.SWAP:
+		IT.SWAP, IT.TIDY:
 			if targets[0] == targets[1]:
 				return "Pick two different cups."
 		IT.TOAST, IT.PEEK, IT.INSPECT:
@@ -495,6 +516,17 @@ func resolve_items() -> Array:
 					(seats[seat]["evidence"] as Array).append({"kind": "watch", "who": t, "into": into})
 					step["public"].append({"type": "peek", "seat": seat, "target": t})
 					step["private"].append({"type": "watch_result", "who": t, "into": into})
+				IT.TIDY:
+					# The Butler's quiet swap: the cups move for all to see, the hand that moved them doesn't.
+					var a: int = targets[0]
+					var b: int = targets[1]
+					var ca := cup_at[a]
+					cup_at[a] = cup_at[b]
+					cup_at[b] = ca
+					cups[cup_at[a]]["swapped_by"] = seat
+					cups[cup_at[b]]["swapped_by"] = seat
+					step["public"].append({"type": "swap", "seat": -1, "a": a, "b": b})
+					step["private"].append({"type": "tidy_done", "a": a, "b": b})
 				IT.LEAVES:
 					var t: int = targets[0]
 					var n := (cups[cup_at[t]]["contents"] as Array).size()
@@ -517,6 +549,8 @@ func resolve_items() -> Array:
 					# Poison leaves a trace on the hands of whoever poured it THIS round: a poisoner
 					# who lies low for a round comes up clean.
 					var guilty := int(seats[t]["dropped"]) == I.POISON
+					if guilty:
+						seats[seat]["inspect_hits"] = int(seats[seat].get("inspect_hits", 0)) + 1
 					(seats[seat]["evidence"] as Array).append({"kind": "inspect", "who": t, "guilty": guilty})
 					step["private"].append({"type": "inspect_result", "who": t, "guilty": guilty})
 				IT.PROTECT:
@@ -790,16 +824,54 @@ func check_winner(final_round_reached: bool = false) -> Dictionary:
 	for s in poisoner_seats():
 		names.append(String(seats[s]["name"]))
 	var who := " & ".join(names)
+	var rivals := mode() == &"rivals" and n_poisoners >= 2
+	# Hit List: once every living poisoner's target is dead (from round 3 on), they win.
+	var hits_done := false
+	if mode() == &"hitlist" and p > 0 and round_no >= hit_round():
+		hits_done = true
+		for s in poisoner_seats():
+			var h := int(seats[s].get("hit", -1))
+			# Only POISON crosses a name off: a target thrown out by the vote spoils the hit.
+			if seats[s]["alive"] and h >= 0 and (seats[h]["alive"] or seats[h]["ejected"]):
+				hits_done = false
 	if p == 0:
 		res["over"] = true
 		for i in seats.size():
-			if not is_poisoner(i):
+			if not is_poisoner(i) and seats[i]["role"] != BUTLER:
 				res["winners"].append(i)
 		res["reason"] = "Every poisoner is out. The guests win! (It was %s.)" % who
+	elif rivals:
+		# Rival Poisoners: each one plays alone. The other poisoner counts as an enemy.
+		var living: Array[int] = []
+		for s in poisoner_seats():
+			if seats[s]["alive"]:
+				living.append(s)
+		if living.size() == 1 and (1 >= g or final_round_reached):
+			res["over"] = true
+			res["winners"] = living.duplicate()
+			res["reason"] = "%s outlasted a rival poisoner and poisoned the party!" % String(seats[living[0]]["name"])
+		elif living.size() == 2 and (g <= 0 or final_round_reached):
+			res["over"] = true
+			res["winners"] = living.duplicate()
+			res["reason"] = "A deadly draw: both rival poisoners (%s) got away with it." % who
+	elif hits_done:
+		res["over"] = true
+		res["winners"] = poisoner_seats()
+		var hn: Array[String] = []
+		for s in poisoner_seats():
+			if int(seats[s].get("hit", -1)) >= 0:
+				hn.append(String(seats[int(seats[s]["hit"])]["name"]))
+		res["reason"] = "%s crossed %s off the hit list. The poisoners win!" % [who, " & ".join(hn)]
 	elif p >= g or final_round_reached:
 		res["over"] = true
 		res["winners"] = poisoner_seats()
 		res["reason"] = "%s poisoned the party and got away with it." % who
+	# The Butler wins on their own terms: still at the table when it's over.
+	if res["over"]:
+		for i in seats.size():
+			if seats[i]["role"] == BUTLER and seats[i]["alive"]:
+				res["winners"].append(i)
+				res["reason"] += " And the Butler survived the whole evening!"
 	return res
 
 
@@ -824,8 +896,8 @@ func public_state() -> Dictionary:
 		# No content count: how many pours went into a cup is secret too.
 		cs.append({"id": c["id"], "owner": c["owner"], "tea": c["tea"], "drunk": c["drunk"],
 			"spilled": bool(c.get("spilled", false))})
-	return {"round": round_no, "laced": false, "seats": ps, "cups": cs, "poisoners": poisoner_count(seats.size()),
-		"roles_in_play": {"inspector": has_role(INSPECTOR), "physician": has_role(PHYSICIAN)},
+	return {"round": round_no, "laced": false, "seats": ps, "cups": cs, "poisoners": n_poisoners, "mode": mode(), "hit_round": hit_round(),
+		"roles_in_play": {"inspector": has_role(INSPECTOR), "physician": has_role(PHYSICIAN), "butler": has_role(BUTLER)},
 		"twist": twist, "gossip": gossip}
 
 
@@ -835,7 +907,10 @@ func private_state(seat: int) -> Dictionary:
 		return {}
 	var s := seats[seat]
 	var partners: Array = []
-	if is_poisoner(seat):
+	# With two poisoners they know there IS a partner, but (unless the lobby says otherwise) not
+	# who: they can poison each other, or vote each other out. Tuned in tools/test_rules.gd, where
+	# known partners made 8-guest games a poisoner walkover.
+	if is_poisoner(seat) and bool(rules.get("partners_known", false)) and mode() != &"rivals":
 		for o in poisoner_seats():
 			if o != seat:
 				partners.append(o)
@@ -845,4 +920,18 @@ func private_state(seat: int) -> Dictionary:
 		"target": int(s["served"]), "evidence": (s["evidence"] as Array).duplicate(true),
 		"spike": false, "picked": picked_indices(seat),
 		"last_protect": int(s["last_protect"]), "self_protected": bool(s["self_protected"]),
+		"hit": int(s.get("hit", -1)), "hunted": is_hunted(seat),
 	}
+
+
+## Hit List: the first round a poisoned target wins it (later with two poisoners and targets).
+func hit_round() -> int:
+	return 4 if n_poisoners >= 2 else 3
+
+
+## Hit List: is this guest on some living poisoner's list?
+func is_hunted(seat: int) -> bool:
+	for p in poisoner_seats():
+		if seats[p]["alive"] and int(seats[p].get("hit", -1)) == seat:
+			return true
+	return false

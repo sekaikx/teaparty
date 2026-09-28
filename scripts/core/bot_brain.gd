@@ -88,6 +88,11 @@ func choose_serve(priv: Dictionary, pub: Dictionary) -> Dictionary:
 				claimed.append(c)
 		if not claimed.is_empty() and rng.randf() < 0.7:
 			victims = claimed
+		# Hit List: go for the target (most of the time; a poisoner who only ever serves one
+		# guest is easy to spot).
+		var hit := int(priv.get("hit", -1))
+		if hit >= 0 and others.has(hit) and rng.randf() < 0.65:
+			victims = [hit]
 		var idx := hand.find(I.POISON)
 		# A careful poisoner now and then pours something harmless to keep a clean record (more
 		# often with an Inspector about: poison on your hands this round is proof).
@@ -128,6 +133,14 @@ func choose_item(priv: Dictionary, pub: Dictionary) -> Dictionary:
 				if float(sc.get(o, 0.0)) > float(sc.get(best, 0.0)) + 0.5:
 					best = o
 			return {"index": i, "targets": [best]}
+		if int(items[i]) == IT.TIDY:
+			# The Butler stirs things up now and then (any two cups but its own, so it stays clean).
+			if others.size() >= 2 and rng.randf() < 0.6:
+				var a := _pick(others)
+				var rest := others.duplicate()
+				rest.erase(a)
+				return {"index": i, "targets": [a, _pick(rest)]}
+			continue
 		if int(items[i]) == IT.PROTECT:
 			var last := int(priv.get("last_protect", -1))
 			if not bool(priv.get("self_protected", false)) and last != seat and rng.randf() < 0.25:
@@ -412,7 +425,8 @@ func choose_vote(pub: Dictionary) -> int:
 func chatter_emote(_priv: Dictionary, _pub: Dictionary) -> int:
 	if rng.randf() < aggression * 0.35:
 		return 2   # accuse
-	return [0, 1, 3, 4, 6, 7][rng.randi_range(0, 5)]
+	var pool := [0, 1, 3, 4, 6, 7, 8, 9, 10, 11]
+	return pool[rng.randi_range(0, pool.size() - 1)]
 
 
 ## Ghosts can't see inside cups: they just rattle one for spooky fun.

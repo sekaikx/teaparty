@@ -183,6 +183,20 @@ Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
   sees the same outcome online.
 - **Slow-mo reveal.** The camera turns to whoever is collapsing, time slows down, and the screen shows
   POISONED!. If you're the one dying, a death cam shows your own collapse.
+- **Party modes.** *Hit List*: every poisoner gets a secret target, who is warned and gets an
+  extra item each round; poisoning the target (from round 3, round 4 with two poisoners) wins it
+  outright, a target voted out spoils the hit. *Rival Poisoners* (6+): two poisoners, each with
+  their own vial every round, who are enemies too; the last one standing wins alone.
+- **The Butler** (7+ guests) is on nobody's side: each round they may TIDY (secretly swap two
+  cups) and they win if they're alive at the end, whoever else wins.
+- **Daily challenge.** One a day on the main menu, the same for everyone (Swap Meet, Everyone's a
+  Suspect, The Nose Knows, Full Moon Fever, Gossip Night, Sugar Coated, The Big Party, Murder in
+  the Glasshouse, Fresh Cups Only), worth +150 coins the first time each day.
+- **Dramatic role reveal.** Whoever is thrown out gets a spotlight and a drumroll: "ADA WAS...
+  THE POISONER!" (or an innocent guest, the Inspector...).
+- **Replay card.** After the match, WHO POURED WHAT? lists every pour, item and death, round by round.
+- **Trophies.** 17 achievements (local, and Steam achievements when the app defines them).
+- **The Glasshouse.** A moonlit greenhouse room with lanterns and fireflies. 12 emotes with voice lines.
 - **Helium voices** lobby toggle: squeaky voice chat.
 - Slide whistle, bonk, splat and a kazoo fanfare for the winner.
 

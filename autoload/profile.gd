@@ -229,6 +229,10 @@ func _apply_quality() -> void:
 
 # ---------------------------------------------------------------- save
 
+## Achievement id -> the date it was unlocked (see Achievements).
+var achievements: Dictionary = {}
+
+
 func save_profile() -> void:
 	if ephemeral:
 		return
@@ -246,6 +250,7 @@ func save_profile() -> void:
 		st[String(k)] = stats[k]
 	cf.set_value("player", "stats", st)
 	cf.set_value("player", "settings", settings)
+	cf.set_value("player", "achievements", achievements)
 	cf.save(PATH)
 
 
@@ -265,6 +270,7 @@ func load_profile() -> void:
 	var eq: Dictionary = cf.get_value("player", "equipped", {})
 	for k: String in eq:
 		equipped[StringName(k)] = StringName(String(eq[k]))
+	achievements = cf.get_value("player", "achievements", {})
 	var st: Dictionary = cf.get_value("player", "stats", {})
 	for k: String in st:
 		stats[StringName(k)] = int(st[k])

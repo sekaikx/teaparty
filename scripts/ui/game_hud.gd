@@ -737,6 +737,8 @@ func _coach_text_for() -> Array:
 					if Defs.is_role_card(int(mine[i])) and not done.has(i):
 						if int(mine[i]) == Defs.Item.INSPECT:
 							return ["INSPECTOR: INSPECT A GUEST (secret)", "Click INSPECT, then a guest. Poison leaves a trace on whoever poured it this round. Nobody sees you do it.", Ui.YELLOW]
+						if int(mine[i]) == Defs.Item.TIDY:
+							return ["BUTLER: TIDY UP (secret)", "Click TIDY UP, then two cups to swap. Everyone sees the cups move; nobody knows it was you.", Ui.SKY]
 						return ["PHYSICIAN: WATCH OVER A GUEST (secret)", "Click WATCH OVER, then a guest. If they drink poison, your smelling salts save them.", Ui.MINT]
 				return ["USE AN ITEM (everyone picks at once)", "SNIFF a cup, WATCH where a guest poured, or SWAP two cups. Or PASS.", Ui.SKY]
 			return ["LOCKED IN: %s" % _my_lock if _my_lock != "" else "LOCKED IN", "Waiting for the others...", Ui.MINT]
@@ -789,6 +791,11 @@ func _evidence_lines() -> Array[String]:
 		for p: int in partners:
 			names.append(Session.seat_name(p))
 		out.push_front("Your fellow poisoner: %s." % ", ".join(names))
+	var hit := int(Session.private.get("hit", -1))
+	if hit >= 0:
+		out.push_front("Your target: %s%s." % [Session.seat_name(hit), "" if bool(Session.seat_info(hit).get("alive", true)) else " (DONE!)"])
+	elif bool(Session.private.get("hunted", false)):
+		out.push_front("Someone has YOUR name on their hit list.")
 	return out
 
 
@@ -826,12 +833,24 @@ func _show_role() -> void:
 		extras.append("an INSPECTOR")
 	if rip.get("physician", false):
 		extras.append("a PHYSICIAN")
-	if role == &"inspector" or role == &"physician":
+	if rip.get("butler", false) and role != &"butler":
+		extras.append("a BUTLER (on nobody's side)")
+	if role == &"butler":
+		head = "YOU ARE THE BUTLER"
+		body = String(Defs.ROLES[role]["desc"])
+		col = Ui.SKY
+	elif role == &"inspector" or role == &"physician":
 		head = "YOU ARE %s" % Defs.role_name(role).to_upper()
 		body = String(Defs.ROLES[role]["desc"]) + " You're innocent: help the guests find the poisoner."
 		col = Ui.YELLOW if role == &"inspector" else Ui.MINT
 	elif not extras.is_empty():
 		body += " Somewhere among the guests: %s." % " and ".join(extras)
+	if role != &"poisoner" and bool(Session.private.get("hunted", false)):
+		body += " And a warning: SOMEONE HAS YOUR NAME ON A HIT LIST. You get an extra item each round: stay alive!"
+	elif role != &"poisoner" and String(Session.public.get("mode", "")) == "hitlist":
+		body += " HIT LIST: the poisoner has a secret target. If the target dies, the poisoner wins."
+	elif role != &"poisoner" and String(Session.public.get("mode", "")) == "rivals" and n > 1:
+		body += " RIVALS: the two poisoners are enemies of each other too. Get both out to win."
 	if role == &"poisoner":
 		head = "YOU ARE THE POISONER"
 		body = "Nobody knows. Each round, pour poison into someone's cup in the dark. At the meeting, lie about where you poured. Win when there are as many poisoners as guests left."
@@ -841,12 +860,25 @@ func _show_role() -> void:
 			for p: int in partners:
 				names.append(Session.seat_name(p))
 			body += " Your partner in crime: %s." % ", ".join(names)
+		elif n > 1 and String(Session.public.get("mode", "")) == "rivals":
+			body += " But there's a RIVAL poisoner too, and they're not on your side. Only one of you can win: poison them, or get them voted out."
+		elif n > 1:
+			body += " There's a SECOND poisoner at the table... but you don't know who. Careful whose cup you pick."
+		var hit := int(Session.private.get("hit", -1))
+		if hit >= 0:
+			body = "Nobody knows. Your secret target: %s. Poison them (it counts from round %d on) and you win; if they get voted out, the hit is off. Or win the usual way: as many poisoners as guests left." % [Session.seat_name(hit).to_upper(), int(Session.public.get("hit_round", 3))]
 		if not extras.is_empty():
 			body += " Beware: %s is hiding among the guests." % " and ".join(extras)
 		col = Ui.PINK
 	var p := Ui.panel()
 	var v := Ui.vbox(8)
 	p.add_child(v)
+	var dly := String(Session.match_rules.get("daily", ""))
+	if dly != "":
+		for d: Dictionary in Defs.DAILY:
+			if d["id"] == dly:
+				v.add_child(Ui.label("DAILY CHALLENGE: %s" % String(d["name"]).to_upper(), 20, Ui.ORANGE, 800))
+				v.add_child(Ui.wrap(Ui.label(String(d["desc"]), 16, Ui.CREAM, 700), 560))
 	v.add_child(Ui.title(head, 44, col))
 	v.add_child(Ui.wrap(Ui.label(body, 20), 560))
 	var c := Ui.center(p)
@@ -1240,7 +1272,11 @@ func _on_event(ev: Dictionary) -> void:
 		"spike_sound":
 			_log("...a suspicious drip", Ui.LILAC)
 		"swap":
-			_log("%s SWAPPED %s's and %s's cups!" % [name_of.call(ev["seat"]), name_of.call(ev["a"]), name_of.call(ev["b"])], Ui.SKY)
+			if int(ev["seat"]) < 0:
+				_log("Someone quietly swapped %s's and %s's cups..." % [name_of.call(ev["a"]), name_of.call(ev["b"])], Ui.SKY)
+				stamp("CUPS MOVED!", Ui.SKY, 1.2)
+			else:
+				_log("%s SWAPPED %s's and %s's cups!" % [name_of.call(ev["seat"]), name_of.call(ev["a"]), name_of.call(ev["b"])], Ui.SKY)
 		"sniff":
 			_log("%s sniffed %s's cup" % [name_of.call(ev["seat"]), name_of.call(ev["target"])])
 		"sniff_result":
@@ -1458,6 +1494,58 @@ func _show_reveal(list: Array) -> void:
 	Sfx.play(&"page", -3.0)
 
 
+## The big moment: "NAME WAS..." then, on the drum hit, what they really were.
+func _eject_reveal(seat: int, role: StringName) -> void:
+	var box := Ui.vbox(6)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var c := Ui.center(box)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(c)
+	c.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	c.modulate.a = 0.0
+	var line1 := Ui.hbox(12)
+	line1.alignment = BoxContainer.ALIGNMENT_CENTER
+	line1.add_child(Ui.dot(Session.seat_color(seat), 40))
+	var who := Ui.title("%s WAS..." % Session.seat_name(seat).to_upper(), 58, Ui.CREAM)
+	line1.add_child(who)
+	box.add_child(line1)
+	var text := {&"poisoner": "THE POISONER!", &"inspector": "THE INSPECTOR", &"physician": "THE PHYSICIAN",
+		&"butler": "THE BUTLER"}.get(role, "AN INNOCENT GUEST") as String
+	var col := {&"poisoner": Ui.PINK, &"inspector": Ui.YELLOW, &"physician": Ui.MINT, &"butler": Ui.SKY}.get(role, Ui.LILAC) as Color
+	var big := Ui.title(text, 92, col)
+	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	big.modulate.a = 0.0
+	box.add_child(big)
+	var sub := Ui.label("", 24, Ui.CREAM, 800, 8)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.modulate.a = 0.0
+	box.add_child(sub)
+	var tw := c.create_tween()
+	tw.tween_interval(2.3)
+	tw.tween_property(c, "modulate:a", 1.0, 0.35)
+	tw.tween_interval(3.6 - 2.3 - 0.35)
+	tw.tween_callback(func() -> void:
+		big.pivot_offset = big.size * 0.5
+		big.scale = Vector2.ONE * 2.2)
+	tw.tween_property(big, "modulate:a", 1.0, 0.08)
+	tw.parallel().tween_property(big, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.5)
+	tw.tween_callback(func() -> void:
+		# How many poisoners are left (dead and thrown-out roles are public by now).
+		var total := int(Session.public.get("poisoners", 1))
+		var gone := 0
+		for i in Session.seat_count():
+			if StringName(Session.seat_info(i).get("role", &"")) == &"poisoner" or (i == seat and role == &"poisoner"):
+				gone += 1
+		var left := maxi(0, total - gone)
+		sub.text = "No poisoners left!" if left == 0 else ("%d poisoner%s still at the table..." % [left, "" if left == 1 else "s"]))
+	tw.tween_property(sub, "modulate:a", 1.0, 0.3)
+	tw.tween_interval(1.9)
+	tw.tween_property(c, "modulate:a", 0.0, 0.4)
+	tw.tween_callback(c.queue_free)
+
+
 ## Who voted for whom, and who got thrown out.
 func _show_votes(ev: Dictionary) -> void:
 	for c in _reveal_rows.get_children():
@@ -1485,12 +1573,12 @@ func _show_votes(ev: Dictionary) -> void:
 	else:
 		var caught := StringName(ev.get("role", &"")) == &"poisoner"
 		_log("%s was thrown out of the party. %s" % [Session.seat_name(ej), "They WERE the poisoner!" if caught else "They were innocent."], Ui.PINK if caught else Ui.LILAC)
-		stamp("THROWN OUT!", Ui.PINK, 1.4)
+		_eject_reveal(ej, StringName(ev.get("role", &"")))
 	(_reveal.get_child(0).get_child(0) as Label).text = "THE VOTE"
 	_reveal.visible = true
 	Ui.pop_in(_reveal)
 	var tw := create_tween()
-	tw.tween_interval(5.0)
+	tw.tween_interval(2.2 if ej >= 0 else 5.0)
 	tw.tween_callback(func() -> void:
 		_reveal.visible = false
 		(_reveal.get_child(0).get_child(0) as Label).text = "THE POISONED CUPS")

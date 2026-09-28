@@ -751,23 +751,14 @@ func _on_event(ev: Dictionary) -> void:
 		"vote_result":
 			var ej := int(ev.get("ejected", -1))
 			if ej >= 0 and ej < guests.size():
-				var g := guests[ej]
-				var caught := StringName(ev.get("role", &"")) == &"poisoner"
-				_focus = g.head_position()
-				_focus_until = Time.get_ticks_msec() + 3500
-				var head := g.head_position()
-				get_tree().create_timer(0.8).timeout.connect(func() -> void:
-					g.die(&"yeet")
-					shake(0.2)
-					Sfx.play(&"sting", -2.0)
-					_blame_labels.append(_float_text(head + Vector3(0, 0.75, 0), "WAS THE POISONER!" if caught else "WAS INNOCENT...",
-						Color("ff5d8f") if caught else Color("c3a6ff"), 0.0, 34)))
+				_role_reveal(guests[ej], StringName(ev.get("role", &"")))
 		"spike_sound":
 			Sfx.play(&"plip", -8.0, 0.2)
 		"swap":
 			var a := cup_at_seat(int(ev["a"]))
 			var b := cup_at_seat(int(ev["b"]))
-			guests[int(ev["seat"])].gesture(&"Interact")
+			if int(ev["seat"]) >= 0:
+				guests[int(ev["seat"])].gesture(&"Interact")
 			Sfx.play(&"slide")
 			if a and b:
 				var pa := layout.cup_spots[int(ev["b"])]
@@ -909,6 +900,46 @@ func _slow_mo() -> void:
 	tw.tween_callback(func() -> void: Engine.time_scale = 0.35)
 	tw.tween_interval(1.1)
 	tw.tween_method(func(v: float) -> void: Engine.time_scale = v, 0.35, 1.0, 0.5)
+
+
+# ---------------------------------------------------------------- the role reveal
+
+## Thrown out: the room dims, a spotlight falls on them, a drumroll... then the HUD says what
+## they were, and out they go (REVEAL_HIT seconds in, on the drum hit).
+const REVEAL_HIT := 3.6
+
+
+func _role_reveal(g: Guest, role: StringName) -> void:
+	_focus = g.head_position()
+	_focus_until = Time.get_ticks_msec() + 6500
+	_dark_setup()
+	var tw := create_tween()
+	tw.tween_method(_apply_dark, _dark, 0.55, 0.6)
+	var spot := SpotLight3D.new()
+	spot.light_color = Color("fff1d0")
+	spot.light_energy = 0.0
+	spot.spot_range = 5.0
+	spot.spot_angle = 16.0
+	spot.shadow_enabled = true
+	add_child(spot)
+	var head := g.head_position()
+	spot.global_transform = Transform3D(Basis(), head + Vector3(0, 3.2, 0)).looking_at(head, Vector3.FORWARD)
+	var st := spot.create_tween()
+	st.tween_property(spot, "light_energy", 9.0, 0.5)
+	Sfx.play(&"drumroll", -2.0)
+	get_tree().create_timer(REVEAL_HIT).timeout.connect(func() -> void:
+		if not is_instance_valid(g):
+			return
+		g.die(&"yeet")
+		shake(0.25)
+		Sfx.play(&"fanfare" if role == &"poisoner" else &"sting", -2.0)
+		if role == &"poisoner":
+			g.call(&"_confetti", head + Vector3(0, 0.4, 0)))
+	get_tree().create_timer(REVEAL_HIT + 2.6).timeout.connect(func() -> void:
+		var back := create_tween()
+		back.tween_method(_apply_dark, _dark, 0.0, 0.8)
+		back.parallel().tween_property(spot, "light_energy", 0.0, 0.6)
+		back.tween_callback(spot.queue_free))
 
 
 # ---------------------------------------------------------------- lights out

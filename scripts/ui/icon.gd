@@ -39,7 +39,7 @@ func icon_name() -> String:
 			return {Defs.Ingredient.POISON: "poison", Defs.Ingredient.ANTIDOTE: "antidote", Defs.Ingredient.SUGAR: "sugar"}.get(value, "plain")
 		Kind.ITEM:
 			return {Defs.Item.SWAP: "swap", Defs.Item.SNIFF: "sniff", Defs.Item.TOAST: "toast", Defs.Item.PEEK: "watch",
-				Defs.Item.INSPECT: "inspect", Defs.Item.PROTECT: "protect", Defs.Item.LEAVES: "leaves", Defs.Item.FRESH: "fresh"}.get(value, "back")
+				Defs.Item.INSPECT: "inspect", Defs.Item.PROTECT: "protect", Defs.Item.LEAVES: "leaves", Defs.Item.FRESH: "fresh", Defs.Item.TIDY: "tidy"}.get(value, "back")
 	return "back"
 
 

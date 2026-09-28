@@ -37,6 +37,7 @@ ICONS = {
     "protect": ("first-aid-fill", "#e0455f", 0.54),
     "leaves": ("coffee-bean-fill", "#3f9a5a", 0.56),
     "fresh": ("bell-fill", "#e8b93a", 0.56),
+    "tidy": ("broom-fill", "#4aa3c9", 0.58),
 }
 
 
