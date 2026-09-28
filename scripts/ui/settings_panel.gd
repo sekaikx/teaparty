@@ -59,6 +59,14 @@ func _ready() -> void:
 		Profile.set_setting("fullscreen", on)))
 	v.add_child(Ui.check("Low graphics (for laptops: smoother, less pretty)", String(Profile.settings.get("quality", "high")) == "low", func(on: bool) -> void:
 		Profile.set_setting("quality", "low" if on else "high")))
+	var hh := Ui.hbox(12)
+	var hl := Ui.label("HUD size", 18, Ui.CREAM, 700)
+	hl.custom_minimum_size.x = 160
+	hh.add_child(hl)
+	var hs := Ui.slider(0.6, 1.2, 0.05, float(Profile.settings.get("hud_scale", 0.85)), func(val: float) -> void: Profile.set_setting("hud_scale", val))
+	hs.custom_minimum_size.x = 320
+	hh.add_child(hs)
+	v.add_child(hh)
 	var sh := Ui.hbox(12)
 	var sl := Ui.label("Camera speed", 18, Ui.CREAM, 700)
 	sl.custom_minimum_size.x = 160
@@ -67,10 +75,20 @@ func _ready() -> void:
 	sens.custom_minimum_size.x = 320
 	sh.add_child(sens)
 	v.add_child(sh)
-	v.add_child(Ui.check("Screen shake", bool(Profile.settings.get("shake", true)), func(on: bool) -> void:
+	var row2 := Ui.hbox(24)
+	row2.add_child(Ui.check("Screen shake", bool(Profile.settings.get("shake", true)), func(on: bool) -> void:
 		Profile.set_setting("shake", on)))
-	v.add_child(Ui.check("Cap at 60 FPS (a cooler, quieter laptop)", int(Profile.settings.get("max_fps", 0)) == 60, func(on: bool) -> void:
+	row2.add_child(Ui.check("Cap at 60 FPS", int(Profile.settings.get("max_fps", 0)) == 60, func(on: bool) -> void:
 		Profile.set_setting("max_fps", 60 if on else 0)))
+	v.add_child(row2)
+	var mh2 := Ui.hbox(12)
+	var ml := Ui.label("Meeting helpers", 18, Ui.CREAM, 700)
+	ml.custom_minimum_size.x = 160
+	mh2.add_child(ml)
+	var modes := ["auto", "on", "off"]
+	mh2.add_child(Ui.option(["Auto (with bots)", "Always (no mic)", "Off (we're on Discord)"], maxi(0, modes.find(String(Profile.settings.get("meeting_helpers", "auto")))), func(i: int) -> void:
+		Profile.set_setting("meeting_helpers", modes[i])))
+	v.add_child(mh2)
 	v.add_child(Ui.title("CONTROLS", 24, Ui.YELLOW))
 	for line in [
 		"Click: teapot, cups, items, targets  -  drag a card from your tray (TAB) onto a cup",

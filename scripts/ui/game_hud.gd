@@ -97,9 +97,9 @@ func setup(p_table: TableView) -> void:
 	table = p_table
 	layer = 5
 	_root = Control.new()
-	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
+	_fit_root()
 	# A dark vignette at the screen edges (the room itself really goes dark, in 3D).
 	_dark = TextureRect.new()
 	var vg := Gradient.new()
@@ -170,24 +170,24 @@ func _build_top() -> void:
 	var cv := Ui.vbox(0)
 	cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_coach.add_child(cv)
-	_coach_head = Ui.title("", 30, Ui.INK)
+	_coach_head = Ui.title("", 26, Ui.INK)
 	_coach_head.remove_theme_constant_override("outline_size")
 	_coach_head.remove_theme_constant_override("shadow_outline_size")
 	_coach_head.add_theme_constant_override("shadow_offset_y", 0)
 	_coach_head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	cv.add_child(_coach_head)
-	_coach_sub = Ui.label("", 16, Ui.INK, 600)
+	_coach_sub = Ui.label("", 14, Ui.INK, 600)
 	_coach_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	cv.add_child(_coach_sub)
 	_coach.resized.connect(func() -> void: _coach.pivot_offset = _coach.size * 0.5)
 
 
 func _build_side() -> void:
-	_guests = Ui.vbox(6)
+	_guests = Ui.vbox(4)
 	_guests.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_guests)
 	Ui.pin(_guests, Vector2(0, 0), Vector2(0, 0), Vector2(14, 14))
-	_feed = Ui.vbox(6)
+	_feed = Ui.vbox(4)
 	_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_feed.custom_minimum_size = Vector2(300, 0)
 	_root.add_child(_feed)
@@ -307,7 +307,7 @@ func _key_chip(key: String, what: String) -> PanelContainer:
 
 
 func _build_center() -> void:
-	_stamp = Ui.title("", 84, Ui.PINK)
+	_stamp = Ui.title("", 72, Ui.PINK)
 	_stamp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_stamp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_stamp.visible = false
@@ -379,7 +379,19 @@ func _build_pause() -> void:
 
 # ---------------------------------------------------------------- per frame
 
+## Settings > HUD size: the whole HUD is laid out at 1/scale and drawn scaled, so every panel
+## keeps its anchors and simply gets smaller (or bigger).
+func _fit_root() -> void:
+	var k := clampf(float(Profile.settings.get("hud_scale", 0.85)), 0.5, 1.5)
+	var vs := get_viewport().get_visible_rect().size
+	if _root.scale.x != k or _root.size != vs / k:
+		_root.scale = Vector2(k, k)
+		_root.position = Vector2.ZERO
+		_root.size = vs / k
+
+
 func _process(delta: float) -> void:
+	_fit_root()
 	_watch_fps(delta)
 	_mic_hint()
 	var total := maxf(Session.phase_total, 0.01)
@@ -578,7 +590,7 @@ func _refresh_guests() -> void:
 		elif Session.phase == P.TALK:
 			tag = "READY" if s.get("ready", false) else ""
 		var talking := Voice.is_speaking(int(s.get("id", 0)))
-		rows.append([String(s.get("name", "?")), tag, alive, talking, i == Session.my_seat, int(s.get("team", -1)), bool(s.get("bot", false))])
+		rows.append([String(s.get("name", "?")), tag, alive, talking, i == Session.my_seat, int(s.get("team", -1)), bool(s.get("bot", false)), i])
 	var sig := str(rows)
 	if sig == _guest_sig:
 		return
@@ -595,8 +607,11 @@ func _refresh_guests() -> void:
 		var h := Ui.hbox(8)
 		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		p.add_child(h)
-		var nm := Ui.label(("%s%s" % [r[0], " (you)" if r[4] else ""]), 16, Ui.CREAM if r[2] else Color("9aa6d6"), 700)
-		nm.custom_minimum_size.x = 150
+		var dot := Ui.dot(Session.seat_color(int(r[7])), 16)
+		dot.modulate.a = 1.0 if r[2] else 0.45
+		h.add_child(dot)
+		var nm := Ui.label(("%s%s" % [r[0], " (you)" if r[4] else ""]), 14, Ui.CREAM if r[2] else Color("9aa6d6"), 700)
+		nm.custom_minimum_size.x = 130
 		h.add_child(nm)
 		if r[3]:
 			h.add_child(Ui.label("talking", 13, Ui.MINT, 700))
@@ -692,6 +707,8 @@ func _coach_text_for() -> Array:
 		P.INTRO:
 			return ["A POISONER IS AT THE TABLE", "Find them and vote them out before they poison everyone.", Ui.YELLOW]
 		P.DEAL:
+			if _twist_text != "":
+				return ["TWIST! " + _twist_text.get_slice(":", 0), _twist_text.get_slice(": ", 1), Ui.ORANGE]
 			if poisoner:
 				return ["YOU ARE THE POISONER", "Nobody knows. Pour your poison into someone's cup, then lie.", Ui.PINK]
 			return ["YOU'RE AN INNOCENT GUEST", "Watch closely in the dark. Remember what you see.", Ui.YELLOW]
@@ -760,6 +777,10 @@ func _evidence_lines() -> Array[String]:
 				out.append("You WATCHED %s: they poured into %s's cup." % [nm.call(e["who"]), nm.call(e["into"])])
 			"inspect":
 				out.append("You INSPECTED %s: %s" % [nm.call(e["who"]), "POISON ON THEIR HANDS!" if e.get("guilty", false) else "clean hands this round."])
+			"leaves":
+				out.append("The leaves in %s's cup: %d pour%s went in." % [nm.call(e["target"]), int(e["count"]), "" if int(e["count"]) == 1 else "s"])
+			"gossip":
+				out.append("GOSSIP (everyone heard): %s poured into %s's cup." % [nm.call(e["who"]), nm.call(e["into"])])
 			"protect":
 				out.append("You're watching over %s with your smelling salts." % nm.call(e["who"]))
 	var partners: Array = Session.private.get("partners", [])
@@ -786,11 +807,11 @@ func _refresh_notes() -> void:
 		return
 	_points_box.add_child(Ui.label("WHAT YOU KNOW (only you):", 15, Ui.YELLOW, 800))
 	for line in lines:
-		_points_box.add_child(Ui.wrap(Ui.label("- " + line, 14, Ui.CREAM, 700), 300))
-	if ph == P.TALK and not _talking.is_empty():
+		_points_box.add_child(Ui.wrap(Ui.label("- " + line, 13, Ui.CREAM, 700), 270))
+	if ph == P.TALK and not _talking.is_empty() and helpers_on():
 		_points_box.add_child(Ui.label("TALK ABOUT THIS:", 15, Ui.SKY, 800))
 		for line: String in _talking.slice(0, 3):
-			_points_box.add_child(Ui.wrap(Ui.label("- " + line, 14, Ui.CREAM, 700), 300))
+			_points_box.add_child(Ui.wrap(Ui.label("- " + line, 13, Ui.CREAM, 700), 270))
 
 
 func _show_role() -> void:
@@ -853,9 +874,37 @@ func _set_dark(on: bool) -> void:
 
 # ---------------------------------------------------------------- the meeting: claims and votes
 
+var _say_toggle: Button
+## This round's twist, for the coach line.
+var _twist_text := ""
+var _say_forced := false
+
+
+## The SAY bar and the talking points are for playing without voice (and for arguing with bots).
+## Settings > Meeting helpers: auto = shown when bots are at the table, hidden for an all-human
+## table (you're on Discord); the SAY BAR button still opens it.
+func helpers_on() -> bool:
+	match String(Profile.settings.get("meeting_helpers", "auto")):
+		"on":
+			return true
+		"off":
+			return false
+	for i in Session.seat_count():
+		if bool(Session.seat_info(i).get("bot", false)):
+			return true
+	return false
+
+
 func _build_meeting() -> void:
 	_claims = Ui.panel(Color(Ui.PLUM_DARK, 0.95), 18, Vector4(12, 8, 12, 10))
 	_claims.visible = false
+	_say_toggle = Ui.button("SAY BAR (no mic?)", func() -> void:
+		_say_forced = not _say_forced
+		_claim_sig = ""
+		_refresh_meeting(), Ui.LILAC, 14, Vector2(0, 36))
+	_say_toggle.visible = false
+	_root.add_child(_say_toggle)
+	Ui.pin(_say_toggle, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -70))
 	_root.add_child(_claims)
 	Ui.pin(_claims, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -70))
 	var v := Ui.vbox(6)
@@ -868,7 +917,8 @@ func _build_meeting() -> void:
 	row.add_child(Ui.label("SAY:", 16, Ui.YELLOW, 800))
 	_claim_kind = OptionButton.new()
 	for k: String in ["I poured into...", "I saw ... pour into...", "It's ...!", "... is innocent",
-			"I'm the Inspector: POISON on ...", "I'm the Inspector: ... is clean", "I'm the Physician: I watched over ..."]:
+			"I'm the Inspector: POISON on ...", "I'm the Inspector: ... is clean", "I'm the Physician: I watched over ...",
+			"Tea leaves: 1 pour in ...", "Tea leaves: 2 pours in ...", "Tea leaves: 3 pours in ..."]:
 		_claim_kind.add_item(k)
 	_claim_kind.item_selected.connect(func(_i: int) -> void: _claim_layout())
 	row.add_child(_claim_kind)
@@ -931,6 +981,8 @@ func _say_custom() -> void:
 			Session.request_claim({"kind": &"inspect", "a": a, "guilty": false})
 		6:
 			Session.request_claim({"kind": &"protect", "a": a})
+		7, 8, 9:
+			Session.request_claim({"kind": &"leaves", "a": a, "k": _claim_kind.selected - 6})
 	Sfx.play(&"pop", -6.0)
 
 
@@ -951,6 +1003,8 @@ func _truth_claims() -> Array:
 				out.append({"kind": &"inspect", "a": int(e["who"]), "guilty": bool(e.get("guilty", false))})
 			"protect":
 				out.append({"kind": &"protect", "a": int(e["who"])})
+			"leaves":
+				out.append({"kind": &"leaves", "a": int(e["target"]), "k": int(e["count"])})
 	return out
 
 
@@ -969,7 +1023,10 @@ func _refresh_board() -> void:
 	for key: String in latest:
 		var c: Dictionary = latest[key]
 		var line := "%s%s: %s" % [nm.call(int(c["seat"])), " (last words)" if c.get("last", false) else "", Defs.claim_text(c, nm)]
-		_board_box.add_child(Ui.wrap(Ui.label(line, 13, Ui.CREAM, 700), 300))
+		var row := Ui.hbox(6)
+		row.add_child(Ui.dot(Session.seat_color(int(c["seat"])), 12))
+		row.add_child(Ui.wrap(Ui.label(line, 12, Ui.CREAM, 700), 280))
+		_board_box.add_child(row)
 	var odd := _contradictions()
 	if not odd.is_empty():
 		_board_box.add_child(Ui.label("DOESN'T ADD UP:", 16, Ui.PINK, 800))
@@ -1012,7 +1069,19 @@ func _contradictions() -> Array[String]:
 			for w in who_claims:
 				names.append(nm.call(w))
 			out.append("%s all claim to be the %s. There's only one!" % [" and ".join(names), "Inspector" if kind == &"inspect" else "Physician"])
-	# 3. A sighting against someone's own story.
+	# 3. The tea leaves: fewer pours than claims.
+	for c: Dictionary in _said:
+		if StringName(c["kind"]) != &"leaves":
+			continue
+		var cup := int(c["a"])
+		var n := int(c.get("k", 0))
+		var claimed := 0
+		for s: int in poured:
+			if int(poured[s]["a"]) == cup:
+				claimed += 1
+		if claimed > n:
+			out.append("%s read %d pour%s in %s's cup, but %d guests say they poured there." % [nm.call(int(c["seat"])), n, "" if n == 1 else "s", nm.call(cup), claimed])
+	# 4. A sighting against someone's own story.
 	for c: Dictionary in _said:
 		if StringName(c["kind"]) in [&"saw", &"watch"]:
 			var who := int(c["a"])
@@ -1025,7 +1094,9 @@ func _refresh_meeting() -> void:
 	var ph := Session.phase
 	var alive := Session.am_alive()
 	var last := not alive and Session.can_last_words(Session.my_seat)
-	_claims.visible = (alive or last) and ph == P.TALK
+	_claims.visible = (alive or last) and ph == P.TALK and (helpers_on() or _say_forced)
+	_say_toggle.visible = (alive or last) and ph == P.TALK and not helpers_on()
+	_say_toggle.text = "HIDE SAY BAR" if _say_forced else "SAY BAR (no mic?)"
 	_board.visible = ph in [P.TALK, P.VOTE] and not _said.is_empty()
 	_feed.visible = not _board.visible
 	if _claims.visible:
@@ -1063,9 +1134,11 @@ func _refresh_meeting() -> void:
 				if i == Session.my_seat or not bool(Session.seat_info(i).get("alive", false)):
 					continue
 				var seat := i
-				_vote_box.add_child(Ui.button(Session.seat_name(i), func() -> void:
+				var vb := Ui.button(Session.seat_name(i), func() -> void:
 					Session.request_vote(seat)
-					Sfx.play(&"stamp" if false else &"pop", -2.0), Ui.CREAM, 20, Vector2(220, 58)))
+					Sfx.play(&"pop", -2.0), Ui.CREAM, 18, Vector2(200, 48))
+				vb.icon = Ui.dot_texture(Session.seat_color(i), 22)
+				_vote_box.add_child(vb)
 			_vote_box.add_child(Ui.button("SKIP", func() -> void: Session.request_vote(-1), Ui.LILAC, 20, Vector2(220, 58)))
 	else:
 		_vote_sig = ""
@@ -1077,6 +1150,7 @@ func _on_event(ev: Dictionary) -> void:
 	var name_of := func(s: Variant) -> String: return Session.seat_name(int(s))
 	match String(ev.get("type", "")):
 		"round":
+			_twist_text = ""
 			_talking = []
 			_said = []
 			_revealed = []
@@ -1105,6 +1179,32 @@ func _on_event(ev: Dictionary) -> void:
 			Sfx.play(&"secret", -4.0)
 		"lights_on":
 			_set_dark(false)
+		"twist":
+			var tw_def: Dictionary = Defs.TWISTS.get(StringName(ev["id"]), {})
+			_twist_text = "%s: %s" % [tw_def.get("name", ""), tw_def.get("desc", "")]
+			var tw := create_tween()
+			tw.tween_interval(1.7)
+			tw.tween_callback(func() -> void:
+				stamp(String(tw_def.get("name", "TWIST!")), Ui.ORANGE, 1.8)
+				_log("TWIST: " + String(tw_def.get("desc", "")), Ui.ORANGE))
+			Sfx.play(&"sting", -6.0)
+		"gossip":
+			_note_show([Ui.title("GOSSIP!", 34, Ui.INK),
+				Ui.wrap(Ui.label("The butler whispers to the whole table: %s poured into %s's cup." % [name_of.call(ev["who"]), name_of.call(ev["into"])], 19, Ui.INK, 700), 380),
+				Ui.wrap(Ui.label("Everyone heard it. Is that where they say they poured?", 15, Ui.INK), 380)], 6.0)
+			_log("GOSSIP: %s poured into %s's cup" % [name_of.call(ev["who"]), name_of.call(ev["into"])], Ui.ORANGE)
+		"leaves_result":
+			var n := int(ev["count"])
+			_note_show([Ui.title("THE LEAVES IN %s'S CUP..." % String(name_of.call(ev["target"])).to_upper(), 24, Ui.INK),
+				Ui.title("%d POUR%s" % [n, "" if n == 1 else "S"], 46, Color("3f9a5a")),
+				Ui.wrap(Ui.label("That many guests poured into this cup. If more claim they did, someone's lying.", 16, Ui.INK), 380)], 6.0)
+			Sfx.play(&"secret", -4.0)
+		"leaves":
+			_log("%s read the leaves in %s's cup" % [name_of.call(ev["seat"]), name_of.call(ev["target"])])
+		"fresh":
+			_log("%s rang for a FRESH CUP for %s!" % [name_of.call(ev["seat"]), name_of.call(ev["target"])], Ui.YELLOW)
+			stamp("FRESH CUP!", Ui.YELLOW, 1.0)
+			Sfx.play(&"bell", -4.0)
 		"inspect_result":
 			var guilty := bool(ev["guilty"])
 			_note_show([Ui.title("YOU INSPECT %s'S HANDS..." % String(name_of.call(ev["who"])).to_upper(), 26, Ui.INK),
@@ -1303,10 +1403,10 @@ func _log(text: String, color: Color = Ui.CREAM) -> void:
 	var chip := PanelContainer.new()
 	chip.add_theme_stylebox_override("panel", Ui.box(Color(Ui.PLUM_DARK, 0.88), 12, 3, 3, Ui.INK, Vector4(10, 4, 10, 6)))
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	chip.add_child(Ui.wrap(Ui.label(text, 15, color, 600), 280))
+	chip.add_child(Ui.wrap(Ui.label(text, 13, color, 600), 260))
 	_feed.add_child(chip)
 	Ui.pop_in(chip)
-	while _feed.get_child_count() > 6:
+	while _feed.get_child_count() > 5:
 		_feed.get_child(0).free()
 	var tw := chip.create_tween()
 	tw.tween_interval(14.0)

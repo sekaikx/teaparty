@@ -90,6 +90,37 @@ static func chip(text: String, bg: Color, fg: Color = INK, size: int = 16) -> Pa
 	return p
 
 
+static var _dots: Dictionary = {}
+
+
+## A round colour swatch with an ink rim (a guest's colour), as a texture for icons.
+static func dot_texture(c: Color, px: int = 18) -> Texture2D:
+	var key := "%s_%d" % [c.to_html(), px]
+	if _dots.has(key):
+		return _dots[key]
+	var img := Image.create(px, px, false, Image.FORMAT_RGBA8)
+	var r := px * 0.5
+	for y in px:
+		for x in px:
+			var d := Vector2(x + 0.5 - r, y + 0.5 - r).length()
+			var a := clampf(r - d, 0.0, 1.0)
+			var col := INK if d > r - 2.2 else c
+			img.set_pixel(x, y, Color(col, a))
+	var t := ImageTexture.create_from_image(img)
+	_dots[key] = t
+	return t
+
+
+static func dot(c: Color, px: int = 18) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = dot_texture(c, px)
+	t.custom_minimum_size = Vector2(px, px)
+	t.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return t
+
+
 # ---------------------------------------------------------------- text
 
 static func label(text: String, size: int = 18, color: Color = CREAM, weight: int = 600, outline: int = 0) -> Label:

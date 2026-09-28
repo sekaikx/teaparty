@@ -115,6 +115,59 @@ func _unit() -> void:
 	var w4 := r4.check_winner()
 	check(w4["over"] and (w4["winners"] as Array) == [p4], "poisoner wins at 1 v 1")
 	_roles()
+	_new_items()
+
+
+## Tea leaves, a fresh cup, and the twists.
+func _new_items() -> void:
+	var I := Defs.Ingredient
+	var IT := Defs.Item
+	var r := TeaRules.new()
+	r.setup(_players(4), {"items_per_round": 0, "inspector": false, "physician": false}, 21)
+	r.start_round()
+	var pz: int = r.poisoner_seats()[0]
+	var v := (pz + 1) % 4
+	r.pour(pz, (r.seats[pz]["hand"] as Array).find(I.POISON), v)
+	var other := (pz + 2) % 4
+	r.pour(other, 0, v)
+	for s in 4:
+		r.seats[s]["items"] = [IT.LEAVES, IT.FRESH]
+	r.begin_items()
+	check(r.choose_item(other, 0, [v]) == "", "read the leaves")
+	check(r.choose_item(pz, 1, [v]) == "", "ring for a fresh cup")
+	for s in 4:
+		r.pass_turn(s)
+	var n := -1
+	var saved := false
+	for st: Dictionary in r.resolve_items():
+		for ev: Dictionary in st["private"]:
+			if ev.get("type", "") == "leaves_result":
+				n = int(ev["count"])
+		for ev: Dictionary in st["public"]:
+			if ev.get("type", "") == "moments":
+				saved = true
+	check(n == 2, "the leaves count the pours (%d)" % n)
+	check(saved and (r.cups[r.cup_at[v]]["contents"] as Array).is_empty(), "a fresh cup takes the poison away")
+	# Twists: never in round 1, then most rounds; a blackout means no glimpses.
+	var seen := {}
+	var t := TeaRules.new()
+	t.setup(_players(6), {}, 22)
+	t.start_round()
+	check(t.twist == &"", "no twist in the first round")
+	for k in 40:
+		t.start_round()
+		if t.twist != &"":
+			seen[t.twist] = true
+	check(seen.size() >= 4, "the twists come up (%d kinds)" % seen.size())
+	t.twist = &"blackout"
+	for s in t.alive_seats():
+		t.seats[s]["served"] = (s + 1) % 6
+	var sg := t.deal_sightings()
+	var any := false
+	for s: int in sg:
+		if int(sg[s]["who"]) >= 0:
+			any = true
+	check(not any, "blackout: nobody glimpses")
 
 
 ## The Inspector and the Physician.

@@ -145,6 +145,13 @@ func choose_item(priv: Dictionary, pub: Dictionary) -> Dictionary:
 	if idx >= 0 and not poisoner:
 		# Sniff your own cup most of the time: knowing it's poisoned lets you spill it at the toast.
 		return {"index": idx, "targets": [seat if rng.randf() < 0.7 else _pick(others)]}
+	idx = items.find(IT.FRESH)
+	if idx >= 0 and not poisoner and fears_own_cup(pub):
+		return {"index": idx, "targets": [seat]}
+	idx = items.find(IT.LEAVES)
+	if idx >= 0 and not poisoner:
+		# Read the victim-to-be's... well, any cup: the counts catch liars at the meeting.
+		return {"index": idx, "targets": [_pick(others)]}
 	idx = items.find(IT.PEEK)
 	if idx >= 0:
 		var saw_who := -1
@@ -173,6 +180,8 @@ func on_private_event(ev: Dictionary, _pub: Dictionary) -> void:
 			evidence.append({"kind": "watch", "who": int(ev["who"]), "into": int(ev["into"])})
 		"inspect_result":
 			known[int(ev["who"])] = bool(ev["guilty"])
+		"leaves_result":
+			evidence.append({"kind": "leaves", "target": int(ev["target"]), "count": int(ev["count"])})
 
 
 ## Scared of its own cup (it sniffed poison, or just nervous)? Then it tries to cake it away.
@@ -277,6 +286,9 @@ func next_claim(priv: Dictionary, pub: Dictionary) -> Dictionary:
 			for e: Dictionary in evidence:
 				if e.get("kind", "") == "sniff":
 					return {"kind": &"sniff", "a": int(e["target"]), "smell": String(e["smell"])}
+			for e: Dictionary in evidence:
+				if e.get("kind", "") == "leaves":
+					return {"kind": &"leaves", "a": int(e["target"]), "k": int(e["count"])}
 		4:
 			var t := choose_vote(pub)
 			return {"kind": &"sus", "a": t} if t >= 0 else {}

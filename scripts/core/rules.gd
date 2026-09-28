@@ -43,6 +43,9 @@ var fallen_last: Array[int] = []
 var votes: Dictionary = {}
 ## seat -> the Physician's seat, for guests watched over this round.
 var protected: Dictionary = {}
+## This round's twist (&"" for none) and the gossip it spread.
+var twist: StringName = &""
+var gossip: Dictionary = {}
 
 
 func setup(players: Array, p_rules: Dictionary, seed_value: int) -> void:
@@ -179,6 +182,12 @@ func start_round() -> void:
 		s["evidence"] = []
 		s["rattles"] = int(rules["ghost_rattles"]) if not s["alive"] else 0
 	protected.clear()
+	gossip = {}
+	# Most rounds bring a twist (never the first, so a first game starts plain).
+	twist = &""
+	if bool(rules.get("twists", true)) and round_no >= 2 and rng.randf() < 0.65:
+		var ids: Array = Defs.TWISTS.keys()
+		twist = ids[rng.randi_range(0, ids.size() - 1)]
 	for seat in seats.size():
 		var cup: Dictionary = cups[cup_at[seat]]
 		cup["contents"] = []
@@ -204,7 +213,7 @@ func start_round() -> void:
 			innocents.append(seat)
 			var hand: Array = []
 			for n in 3:
-				hand.append(I.SUGAR if rng.randf() < 0.4 else I.NOTHING)
+				hand.append(I.SUGAR if rng.randf() < (0.8 if twist == &"sugar_rush" else 0.4) else I.NOTHING)
 			seats[seat]["hand"] = hand
 	# One antidote a round (two at a big table with two poisoners).
 	_shuffle(innocents)
@@ -213,7 +222,7 @@ func start_round() -> void:
 	for seat in alive:
 		(seats[seat]["hand"] as Array).sort()
 		seats[seat]["items"] = []
-		for n in int(rules["items_per_round"]):
+		for n in int(rules["items_per_round"]) + (1 if twist == &"favours" else 0):
 			_give_item(seats[seat])
 		var rc := role_card(seat)
 		if rc >= 0:
@@ -300,6 +309,10 @@ func deal_sightings() -> Dictionary:
 	var chance := float(rules.get("glimpse_chance", -1.0))
 	if chance < 0.0:
 		chance = glimpse_for(seats.size()) * role_glimpse_k()
+	if twist == &"blackout":
+		chance = 0.0
+	elif twist == &"full_moon":
+		chance = 1.0
 	for seat in alive:
 		if rng.randf() > chance:
 			(seats[seat]["evidence"] as Array).append({"kind": "dark"})
@@ -317,6 +330,16 @@ func deal_sightings() -> Dictionary:
 		out[seat] = ev
 	for seat in alive:
 		cups[cup_at[seat]]["tea"] = true
+	if twist == &"gossip":
+		var pourers: Array[int] = []
+		for o in alive:
+			if int(seats[o]["served"]) >= 0:
+				pourers.append(o)
+		if not pourers.is_empty():
+			var who: int = pourers[rng.randi_range(0, pourers.size() - 1)]
+			gossip = {"who": who, "into": int(seats[who]["served"])}
+			for o in alive:
+				(seats[o]["evidence"] as Array).append({"kind": "gossip", "who": who, "into": gossip["into"]})
 	return out
 
 
@@ -324,7 +347,8 @@ func deal_sightings() -> Dictionary:
 # Everybody picks an item and its targets during the same short window; then they all play out
 # in a fixed order: sniffs and watches first (information), then swaps (the cups move).
 
-const ITEM_ORDER := [Defs.Item.PROTECT, Defs.Item.INSPECT, Defs.Item.SNIFF, Defs.Item.PEEK, Defs.Item.SWAP, Defs.Item.TOAST]
+const ITEM_ORDER := [Defs.Item.PROTECT, Defs.Item.INSPECT, Defs.Item.SNIFF, Defs.Item.PEEK, Defs.Item.LEAVES,
+	Defs.Item.SWAP, Defs.Item.FRESH, Defs.Item.TOAST]
 
 ## seat -> {"index": item index, "item": item, "targets": Array} or {} for a pass.
 var picks: Dictionary = {}
@@ -471,6 +495,22 @@ func resolve_items() -> Array:
 					(seats[seat]["evidence"] as Array).append({"kind": "watch", "who": t, "into": into})
 					step["public"].append({"type": "peek", "seat": seat, "target": t})
 					step["private"].append({"type": "watch_result", "who": t, "into": into})
+				IT.LEAVES:
+					var t: int = targets[0]
+					var n := (cups[cup_at[t]]["contents"] as Array).size()
+					(seats[seat]["evidence"] as Array).append({"kind": "leaves", "target": t, "count": n})
+					step["public"].append({"type": "leaves", "seat": seat, "target": t})
+					step["private"].append({"type": "leaves_result", "target": t, "count": n})
+				IT.FRESH:
+					var t: int = targets[0]
+					var cup: Dictionary = cups[cup_at[t]]
+					var deadly := lethal(cup["contents"])
+					cup["contents"] = []
+					cup["fresh_by"] = seat
+					step["public"].append({"type": "fresh", "seat": seat, "target": t})
+					if deadly:
+						step["public"].append({"type": "moments", "list": [{"title": "BUTLER SAVE!",
+							"sub": "The butler took away %s's cup... and it was POISONED" % seats[t]["name"]}]})
 				IT.INSPECT:
 					var t: int = targets[0]
 					seats[seat]["inspects"] += 1
@@ -785,7 +825,8 @@ func public_state() -> Dictionary:
 		cs.append({"id": c["id"], "owner": c["owner"], "tea": c["tea"], "drunk": c["drunk"],
 			"spilled": bool(c.get("spilled", false))})
 	return {"round": round_no, "laced": false, "seats": ps, "cups": cs, "poisoners": poisoner_count(seats.size()),
-		"roles_in_play": {"inspector": has_role(INSPECTOR), "physician": has_role(PHYSICIAN)}}
+		"roles_in_play": {"inspector": has_role(INSPECTOR), "physician": has_role(PHYSICIAN)},
+		"twist": twist, "gossip": gossip}
 
 
 ## What one seat may see on top of the public state.

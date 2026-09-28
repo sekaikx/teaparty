@@ -111,6 +111,40 @@ func seat_name(seat: int) -> String:
 	return String(seat_info(seat).get("name", "?"))
 
 
+## Each guest's colour at the table (their bean's colour): the way to tell who's who.
+func seat_color(seat: int) -> Color:
+	var info: Dictionary = roster[seat] if seat >= 0 and seat < roster.size() else {}
+	var cos: Dictionary = info.get("cos", {})
+	return Cosmetics.entry(&"skin", StringName(str(cos.get("skin", &"cream")))).get("body", Color.WHITE)
+
+
+## Every guest gets a different colour: players keep theirs (first come, first served), bots and
+## late duplicates are repainted with colours nobody is wearing.
+static func unique_colours(players: Array) -> Array:
+	var out: Array = players.duplicate(true)
+	var used := {}
+	var order: Array = []
+	for i in out.size():
+		if not bool(out[i].get("bot", false)):
+			order.append(i)
+	for i in out.size():
+		if bool(out[i].get("bot", false)):
+			order.append(i)
+	var free: Array = Cosmetics.SKINS.keys()
+	for i: int in order:
+		var cos: Dictionary = out[i].get("cos", {})
+		var skin := StringName(str(cos.get("skin", &"cream")))
+		if used.has(skin):
+			for f: StringName in free:
+				if not used.has(f):
+					skin = f
+					break
+		used[skin] = true
+		cos["skin"] = skin
+		out[i]["cos"] = cos
+	return out
+
+
 func cup_of(seat: int) -> Dictionary:
 	var cs: Array = public.get("cups", [])
 	return cs[seat] if seat >= 0 and seat < cs.size() else {}
@@ -119,6 +153,7 @@ func cup_of(seat: int) -> Dictionary:
 # ---------------------------------------------------------------- start / stop
 
 func host_start(players: Array, p_rules: Dictionary) -> void:
+	players = unique_colours(players)
 	_rules = TeaRules.new()
 	_rules.setup(players, p_rules, _rng.randi())
 	# QA only (tools/qa_driver.gd --role=...): hand the host's own seat a given role.
@@ -317,6 +352,8 @@ func _start_round() -> void:
 		(_bots[s] as BotBrain).new_round(pub)
 	_last_reveal = []
 	_emit({"type": "round", "round": _rules.round_no, "laced": false})
+	if _rules.twist != &"":
+		_emit({"type": "twist", "id": _rules.twist})
 	_set_phase(P.DEAL, DEAL_TIME)
 
 
@@ -327,6 +364,8 @@ func _after_serve() -> void:
 		var sg: Dictionary = sightings[seat]
 		_emit_private(seat, {"type": "sighting", "who": sg["who"], "into": sg["into"]})
 	_emit({"type": "lights_on"})
+	if not _rules.gossip.is_empty():
+		_emit({"type": "gossip", "who": _rules.gossip["who"], "into": _rules.gossip["into"]})
 	_begin_items()
 
 
@@ -414,6 +453,10 @@ func _talking_points() -> Array:
 				lines.append("%s WATCHED %s. They know where %s poured. Ask them." % [_nm(ev["seat"]), _nm(ev["target"]), _nm(ev["target"])])
 			"swap":
 				lines.append("%s SWAPPED %s's and %s's cups. Why?" % [_nm(ev["seat"]), _nm(ev["a"]), _nm(ev["b"])])
+			"leaves":
+				lines.append("%s read the leaves in %s's cup. How many pours?" % [_nm(ev["seat"]), _nm(ev["target"])])
+			"fresh":
+				lines.append("%s rang for a fresh cup for %s. Protecting them... or hiding something?" % [_nm(ev["seat"]), _nm(ev["target"])])
 	lines.append("Two guests claim the same cup? One of them is lying.")
 	return lines.slice(0, 3)
 

@@ -27,7 +27,8 @@ Poisoners win when there are as many poisoners as guests left.
 |---|---|
 | **1 SERVE (lights out)** | Click **your teapot**, click **any other guest's cup**, then **drag one card** from your secret tray into it. The poisoner holds **Poison**. Guests hold **Plain** and **Sugar**, and one guest gets the **Antidote** (it cancels a poison in the same cup). Nobody can see where anyone pours. |
 | **The glimpse** | When the lights come back, most guests learn ONE true thing: *"In the dark you SAW Baron pour into Ada's cup."* (Sometimes the candle flickers and you saw nothing.) It's in your **WHAT YOU KNOW** panel. |
-| **2 ITEMS** | Everyone picks at once: **Sniff** a cup (is it poisoned right now? sugar hides it), **Watch** a guest (you learn whose cup they poured into), **Swap** two cups (everyone sees it). Or pass. |
+| **2 ITEMS** | Everyone picks at once: **Sniff** a cup (is it poisoned right now? sugar hides it), **Watch** a guest (you learn whose cup they poured into), **Tea Leaves** (how many guests poured into a cup, not what), **Swap** two cups (everyone sees it), or **Fresh Cup** (the butler replaces a cup, poison and all; everyone sees who rang). Or pass. |
+| **Twists** | From round 2 most rounds bring one: **Blackout** (no glimpses), **Full Moon** (everyone glimpses), **Party Favours** (an extra item each), **Gossip** (one true pour told to the whole table), **Sugar Rush** (sugar everywhere, sniffs tell nothing). Lobby toggle. |
 | **3 TOAST** | Everyone raises their cup for 5 seconds. Think yours is poisoned? Press **F** to throw a cake at it and it spills. Hit a face and they drop their cup. Then everyone drinks. The poisoned fall, and **the game doesn't say who poured it**. You only see what was in the deadly cup. |
 | **4 MEETING** | Talk (Discord, or hold **V**). Say where you poured and what you saw. Players without voice use the **SAY** bar (quick buttons for the truth, or build a lie). Whoever was just poisoned gets **one line of last words** before going silent. The **WHO SAID WHAT** board lists every claim and flags stories that **don't add up** (someone says they poured sugar into the victim's cup but the reveal shows no sugar; three people claim the same cup; a sighting contradicts an alibi). Press **READY TO VOTE**. |
 | **Special roles** | With 5+ guests one innocent is secretly **the Inspector** (our detective): each round they **inspect** a guest's hands, and poison leaves a trace on whoever poured it *that round* (a poisoner who lies low comes up clean). With 6+ there's also **the Physician** (our doctor): each round they **watch over** a guest, and if that guest drinks poison, smelling salts bring them round (not the same guest two rounds running, themselves only once). Both play in secret on top of their item, and anyone (the poisoner too) can claim to be them. Two claims for one role show up on the board. Lobby toggles switch them off. |
@@ -153,6 +154,12 @@ Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
   fire go down, the table candles puff out in a wisp of smoke, and you pour by your own little
   candle. The other guests become silhouettes with glowing eyes, and every cup rim glints so you can
   still pick one. A slow heartbeat plays until the lamps stutter back on.
+- **Who's who.** Every guest at the table has their own colour (duplicates are repainted at the
+  start, bots first). The colour is on the guest list, the vote buttons and the WHO SAID WHAT
+  board, and in the meeting and the vote each guest's name floats over their head in it.
+- **A HUD that gets out of the way.** Settings > HUD size (default 85%). Settings > Meeting
+  helpers: the SAY bar and talking points show when bots are at the table and hide for an
+  all-human table (you're on Discord); a SAY BAR button still opens it.
 - **Voice that just works.** Hold **V**: the mic is kept open for the whole session, so the
   first word isn't cut off, and the TALK chip shows your live level (or warns *MIC SILENT?*).
   **Settings > TEST MIC** has a level bar, a device picker and *hear myself*.

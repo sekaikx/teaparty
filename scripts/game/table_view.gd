@@ -402,6 +402,10 @@ func _process(delta: float) -> void:
 	_update_arrow(delta)
 	if _dark > 0.0:
 		_dark_tick(delta)
+	# Who's who: names over heads while people are talking about each other.
+	var names_up := Session.phase in [P.TALK, P.VOTE, P.REVEAL, P.EJECT, P.INTRO] and not _dark_on
+	for g in guests:
+		g.show_head_tag(names_up or g.seat == _hover_seat or Voice.is_speaking(g.peer_id))
 	if Input.is_action_just_pressed(&"throw_cake") and not Ui.typing():
 		throw_cake()
 	if layout.outdoor:

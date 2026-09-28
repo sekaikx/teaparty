@@ -3,7 +3,7 @@ extends RefCounted
 ## Shared constants: ingredients, items, phases, modes, rooms, emotes and default lobby rules.
 
 enum Ingredient { NOTHING, POISON, ANTIDOTE, SUGAR }
-enum Item { SWAP, SNIFF, TOAST, PEEK, INSPECT, PROTECT }
+enum Item { SWAP, SNIFF, TOAST, PEEK, INSPECT, PROTECT, LEAVES, FRESH }
 ## Round order: DEAL > POUR (serve in the dark) > ITEMS > DRINK (the toast) > REVEAL > TALK (the
 ## meeting) > VOTE > EJECT. New phases are appended so the numbers of the old ones never change.
 enum Phase { LOBBY, INTRO, DEAL, POUR, ITEMS, TALK, DRINK, REVEAL, MATCH_END, VOTE, EJECT }
@@ -28,12 +28,25 @@ const ITEMS := {
 		"desc": "Raise a toast to a guest: they must drink their cup right now (after the swaps)."},
 	Item.PEEK: {"name": "Watch", "targets": 1, "target": &"guest",
 		"desc": "Watch a guest: you alone learn whose cup they poured into. Catch a liar."},
+	Item.LEAVES: {"name": "Tea Leaves", "targets": 1, "target": &"cup",
+		"desc": "Read the leaves in a cup: you alone learn how many guests poured into it (not what)."},
+	Item.FRESH: {"name": "Fresh Cup", "targets": 1, "target": &"cup",
+		"desc": "Ring for the butler: one cup is taken away and a fresh one poured. Whatever was in it is gone. Everyone sees you ring."},
 	# Role cards: dealt every round to the Inspector and the Physician, on top of their normal
 	# item, and played in secret (nobody sees who used them).
 	Item.INSPECT: {"name": "Inspect", "targets": 1, "target": &"guest", "role": true,
 		"desc": "INSPECTOR: examine a guest's hands. Poison leaves a trace on whoever poured it THIS round."},
 	Item.PROTECT: {"name": "Watch Over", "targets": 1, "target": &"guest", "role": true,
 		"desc": "PHYSICIAN: keep your smelling salts ready for a guest. If they're poisoned this round, you bring them round."},
+}
+
+## Party twists: one is announced at the start of most rounds (lobby rule "twists").
+const TWISTS := {
+	&"blackout": {"name": "BLACKOUT", "desc": "The candles are out: nobody glimpses anything this round."},
+	&"full_moon": {"name": "FULL MOON", "desc": "Moonlight through the curtains: everyone glimpses a pour this round."},
+	&"favours": {"name": "PARTY FAVOURS", "desc": "Everyone gets an extra item this round."},
+	&"gossip": {"name": "GOSSIP", "desc": "The butler saw something: one true pour is told to the whole table."},
+	&"sugar_rush": {"name": "SUGAR RUSH", "desc": "The trays are full of sugar: sniffing tells you almost nothing."},
 }
 
 ## The special innocent roles, like Mafia's detective and doctor (but at a tea party).
@@ -91,7 +104,9 @@ const DEFAULT_RULES := {
 	"ghosts_talk_to_living": false,
 	"helium": false,
 	"night": false,
-	"items_enabled": [Item.SWAP, Item.SNIFF, Item.PEEK],
+	"items_enabled": [Item.SWAP, Item.SNIFF, Item.PEEK, Item.LEAVES, Item.FRESH],
+	## A random twist most rounds (see TWISTS).
+	"twists": true,
 	## Special innocent roles (dealt when the table is big enough, see ROLES).
 	"inspector": true,
 	"physician": true,
@@ -127,6 +142,7 @@ const CLAIMS := {
 	&"clear": "%s is innocent, I'd bet on it.",
 	&"inspect": "I'm the INSPECTOR: %s had %s hands!",
 	&"protect": "I'm the PHYSICIAN: I watched over %s.",
+	&"leaves": "I read the leaves in %s's cup: %d pours.",
 }
 
 
@@ -151,6 +167,9 @@ static func claim_text(c: Dictionary, nm: Callable) -> String:
 			return "I'm the INSPECTOR: %s %s" % [nm.call(int(c["a"])), "had POISON on their hands!" if c.get("guilty", false) else "had clean hands this round."]
 		&"protect":
 			return "I'm the PHYSICIAN: I watched over %s." % nm.call(int(c["a"]))
+		&"leaves":
+			var n := int(c.get("k", 0))
+			return "I read the leaves in %s's cup: %d pour%s." % [nm.call(int(c["a"])), n, "" if n == 1 else "s"]
 	return "..."
 
 

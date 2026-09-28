@@ -88,6 +88,7 @@ var _title_tag: Label3D
 var _bubble: Label3D
 var _bubble_tw: Tween
 var _mic: Label3D
+var _head_tag: Label3D
 
 var _state := &"sit"
 var _gesture := &""
@@ -591,6 +592,11 @@ func _build_tags() -> void:
 	_bubble.outline_modulate = Color("fff4e0")
 	_bubble.outline_size = 22
 	_bubble.visible = false
+	# A name over the head in the guest's own colour (the meeting, the vote, or on hover).
+	_head_tag = _tag(Ui.display_font(), 30, _skin().get("body", Color.WHITE), 2.2)
+	_head_tag.text = display_name
+	_head_tag.outline_size = 14
+	_head_tag.visible = false
 	_mic = _tag(Ui.body_font(700), 22, Color("3ddc97"), 2.3)
 	_mic.text = "talking..."
 	_mic.offset = Vector2(0, 34)
@@ -620,7 +626,23 @@ func place_tags(pos: Vector3) -> void:
 	_title_tag.global_position = pos
 
 
+func show_head_tag(on: bool) -> void:
+	if _head_tag == null:
+		return
+	var up := on and not is_local and alive
+	if up == _head_tag.visible:
+		return
+	_head_tag.visible = up
+	# One name at a time: the place card steps aside while the name is over the head.
+	_name_tag.visible = _tags_wanted and not up and not is_local
+	_title_tag.visible = _name_tag.visible
+
+
+var _tags_wanted := true
+
+
 func show_tags(on: bool) -> void:
+	_tags_wanted = on
 	_name_tag.visible = on
 	_title_tag.visible = on
 

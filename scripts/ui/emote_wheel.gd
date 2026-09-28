@@ -20,8 +20,9 @@ func _ready() -> void:
 
 
 func open() -> void:
-	_center = get_viewport().get_mouse_position()
-	var vs := get_viewport_rect().size
+	# Local coordinates: the HUD can be scaled (Settings > HUD size).
+	_center = get_local_mouse_position()
+	var vs := size
 	_center = _center.clamp(Vector2(RADIUS + 40, RADIUS + 40), vs - Vector2(RADIUS + 40, RADIUS + 40))
 	_pick = -1
 	visible = true
@@ -40,7 +41,7 @@ func close(fire: bool) -> void:
 func _process(_delta: float) -> void:
 	if not visible:
 		return
-	var d := get_viewport().get_mouse_position() - _center
+	var d := get_local_mouse_position() - _center
 	var n := Defs.EMOTES.size()
 	var p := -1
 	if d.length() > INNER:
