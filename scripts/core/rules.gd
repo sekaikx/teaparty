@@ -118,7 +118,7 @@ func has_role(r: StringName) -> bool:
 ## Tuned in tools/test_rules.gd so the poisoner(s) win roughly 40-50% against bots: bigger
 ## tables give more time to catch one poisoner (fewer glimpses), but two poisoners need more.
 static func glimpse_for(players: int) -> float:
-	return {3: 0.7, 4: 0.6, 5: 0.5, 6: 0.4, 7: 0.33}.get(players, 0.75) as float
+	return {3: 0.7, 4: 0.72, 5: 0.5, 6: 0.4, 7: 0.33}.get(players, 0.75) as float
 
 
 ## The Inspector and the Physician are strong evidence and protection for the guests, so with

@@ -179,10 +179,18 @@ Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
   and the cup flying. There are 8 death styles (*Face in the Cake*, *Pirouette*, *Confetti Pop*,
   *Ascension*, *The Yeet*...). `tools/ragdoll_test.gd` checks every style for launches, falling
   through the floor and jitter.
-- **Cakes that matter.** 3 per round (2 for ghosts). The host decides what each cake hits, so everyone
+- **Cakes that matter.** 4 per guest for the whole match (a ghost gets 2 more), so every throw is a decision. The host decides what each cake hits, so everyone
   sees the same outcome online.
 - **Slow-mo reveal.** The camera turns to whoever is collapsing, time slows down, and the screen shows
   POISONED!. If you're the one dying, a death cam shows your own collapse.
+- **Wardrobe with 12 slots.** Your bean's colour, shape (Classic Bean, Dumpling, String Bean, Teapot,
+  Sprout), eyes (lashes, sleepy, starry, beady, suspicious), hair and hair dye, a body pattern (polka
+  dots, stripes, tummy patch, a big heart, stars), 19 hats (from a propeller cap to a cake dome),
+  13 face items, 8 collars (necktie, medal, villain cape...), cups, deaths and titles. TRY is free;
+  SURPRISE ME dresses you from what you own. `tools/look_lineup.gd` renders every item.
+- **Built for Discord calls.** A speaking order each meeting, a meeting clock that grows with the
+  table, ROUND 3/8 and a FINAL ROUND warning, your Steam name as your in-game name, and the rules for
+  friends who join straight into a lobby. See [docs/DISCORD_PLAYTEST.md](docs/DISCORD_PLAYTEST.md).
 - **Party modes.** *Hit List*: every poisoner gets a secret target, who is warned and gets an
   extra item each round; poisoning the target (from round 3, round 4 with two poisoners) wins it
   outright, a target voted out spoils the hit. *Rival Poisoners* (6+): two poisoners, each with

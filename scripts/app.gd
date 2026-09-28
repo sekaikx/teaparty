@@ -178,6 +178,9 @@ func _show_lobby() -> void:
 	_set_screen(l)
 	if Net.is_host():
 		Steamworks.set_lobby_joinable(true)
+	# A friend who went straight to PLAY ONLINE hasn't seen the rules yet: show them in the lobby.
+	if not bool(Profile.settings.get("tutorial_seen", false)) and not Net.is_solo:
+		_open_tutorial()
 
 
 func _open_wardrobe() -> void:

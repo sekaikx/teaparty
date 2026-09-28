@@ -12,7 +12,7 @@ signal game_event(ev: Dictionary)
 signal match_over(result: Dictionary)
 
 const P := Defs.Phase
-const INTRO_TIME := 4.5
+const INTRO_TIME := 8.0
 const DEAL_TIME := 1.5
 ## The toast: cups raised for this long before everyone drinks (cakes can still knock them away).
 const DRINK_TIME := 5.0
@@ -239,7 +239,8 @@ func _process(delta: float) -> void:
 				_start_round()
 		P.DEAL:
 			if _timer <= 0.0:
-				_set_phase(P.POUR, float(_rules.rules["pour_time"]))
+				# The first serve of a match gets a little longer: new players are still finding the pot.
+				_set_phase(P.POUR, float(_rules.rules["pour_time"]) + (10.0 if _rules.round_no == 1 else 0.0))
 				_schedule_bots_pour()
 		P.POUR:
 			if _rules.all_poured():
@@ -360,7 +361,8 @@ func _start_round() -> void:
 		_history = []
 	_history.append({"round": _rules.round_no, "twist": String(_rules.twist), "pours": [], "items": [], "drinks": [],
 		"ejected": -1, "ejected_role": ""})
-	_cakes.clear()
+	if _rules.round_no == 1:
+		_cakes.clear()
 	_pending_end = {}
 	_round_log.clear()
 	_last_words.clear()
@@ -517,15 +519,25 @@ func _next_turn() -> void:
 func _begin_talk() -> void:
 	for s in _rules.seats.size():
 		_rules.seats[s]["ready"] = false
-	_set_phase(P.TALK, float(_rules.rules["talk_time"]))
+	_set_phase(P.TALK, talk_time())
 	_emit({"type": "talking_points", "lines": _talking_points()})
+	# Who starts the meeting, then round the table (on a voice call it stops everyone talking
+	# at once, and gets the quiet ones to say where they poured).
+	var alive := _rules.alive_seats()
+	if not alive.is_empty():
+		var first: int = alive[_rng.randi_range(0, alive.size() - 1)]
+		var order: Array = []
+		var k := alive.find(first)
+		for i in alive.size():
+			order.append(alive[(k + i) % alive.size()])
+		_emit({"type": "talk_order", "order": order})
 	# Bots poisoned at this toast say their last words first.
 	for s: int in _bots:
 		if not _rules.is_alive(s) and not _rules.seats[s]["ejected"] and int(_rules.seats[s]["died_round"]) == _rules.round_no:
 			var lw := (_bots[s] as BotBrain).last_words(_rules.private_state(s), _rules.public_state())
 			if not lw.is_empty():
 				_do_claim(s, lw)
-	var talk := float(_rules.rules["talk_time"])
+	var talk := talk_time()
 	for s: int in _bots:
 		var b: BotBrain = _bots[s]
 		if _rules.is_alive(s):
@@ -533,6 +545,13 @@ func _begin_talk() -> void:
 			_bot_chatter[s] = _rng.randf_range(1.5, 4.0) + s * 0.6
 		else:
 			_bot_wait[s] = _rng.randf_range(3.0, talk * 0.6)
+
+
+## The meeting clock grows with the table: 8 guests on a call need longer than 4. The lobby's
+## talk time is the time for 5 guests; it still ends early once everyone is ready.
+func talk_time() -> float:
+	var alive := _rules.alive_seats().size() if _rules else 5
+	return clampf(float(_rules.rules["talk_time"]) + 10.0 * (alive - 5), 30.0, 180.0)
 
 
 func _begin_vote() -> void:
@@ -646,8 +665,8 @@ func _push(total: float = -1.0) -> void:
 	var pub := _rules.public_state()
 	pub["phase"] = phase
 	var cakes := {}
-	for k: int in _cakes:
-		cakes[str(k)] = _cakes[k]
+	for k in _rules.seats.size():
+		cakes[str(k)] = _cakes_left(k)
 	pub["cakes"] = cakes
 	pub["resolving"] = _resolving
 	pub["last_words_used"] = _last_words.keys()
@@ -759,7 +778,7 @@ func request_throw(target: Vector3) -> void:
 
 
 func cakes_left() -> int:
-	return int(public.get("cakes", {}).get(str(my_seat), CAKES_LIVING if am_alive() else CAKES_GHOST))
+	return int(public.get("cakes", {}).get(str(my_seat), CAKES_LIVING))
 
 
 func _sender_seat() -> int:
@@ -818,9 +837,12 @@ var _claim_ready: Dictionary = {}
 ## Seats that already said their last words this round.
 var _last_words: Dictionary = {}
 var _last_reveal: Array = []
-const CAKES_LIVING := 3
+## Cakes are a budget for the WHOLE match, per guest (not per round): spend them wisely.
+## A ghost gets a couple more to haunt the table with.
+const CAKES_LIVING := 4
 const CAKES_GHOST := 2
 const CAKE_COOLDOWN := 1.0
+## Cakes thrown so far this match, per seat.
 var _cakes: Dictionary = {}
 var _cake_ready: Dictionary = {}
 
@@ -833,16 +855,20 @@ func _rq_throw(target: Vector3) -> void:
 
 ## The host decides what a cake hits (from its own table), applies it to the rules, and tells
 ## everyone so they all see the same thing.
+func _cakes_left(s: int) -> int:
+	var cap := CAKES_LIVING + (0 if _rules.is_alive(s) else CAKES_GHOST)
+	return maxi(cap - int(_cakes.get(s, 0)), 0)
+
+
 func _throw(s: int, target: Vector3) -> void:
 	if s < 0 or phase in [P.INTRO, P.MATCH_END, P.REVEAL, P.DEAL]:
 		return
 	var ghost := not _rules.is_alive(s)
-	var cap := CAKES_GHOST if ghost else CAKES_LIVING
 	var now := Time.get_ticks_msec() / 1000.0
-	if now < float(_cake_ready.get(s, 0.0)) or int(_cakes.get(s, cap)) <= 0:
+	if now < float(_cake_ready.get(s, 0.0)) or _cakes_left(s) <= 0:
 		return
 	_cake_ready[s] = now + CAKE_COOLDOWN / speed
-	_cakes[s] = int(_cakes.get(s, cap)) - 1
+	_cakes[s] = int(_cakes.get(s, 0)) + 1
 	target = target.clamp(Vector3(-12, -1, -12), Vector3(12, 6, 12))
 	var hit := {"kind": "miss", "seat": -1}
 	if world_probe and is_instance_valid(world_probe):
@@ -1067,7 +1093,7 @@ func _tick_bots(dt: float) -> void:
 				if _rules.is_alive(s):
 					if b.fears_own_cup(pub):
 						_bot_throw(s, true, s)
-					else:
+					elif _cakes_left(s) > 1 and _rng.randf() < 0.3:
 						# Chaos: bonk a rival mid-toast so they drop their cup.
 						var others := _rules.alive_seats()
 						others.erase(s)

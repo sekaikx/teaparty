@@ -78,10 +78,17 @@ func _ready() -> void:
 	elif "--solo" in OS.get_cmdline_user_args():
 		_shot("title", 1.0)
 		await get_tree().create_timer(1.5).timeout
-		Net.solo()
-		for i in 2:
+		var bots := 5
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--bots="):
+				bots = int(a.get_slice("=", 1))
+		Net.solo(0)
+		Net.set_rule("room", room)
+		Net.set_rule("max_players", 8)
+		for i in bots:
 			Net.add_bot()
 		_apply_rules()
+		print("QA TABLE %d guests" % Net.roster.size())
 		await get_tree().create_timer(1.0).timeout
 		_shot("lobby", 0.0)
 		await get_tree().create_timer(0.8).timeout
@@ -209,7 +216,9 @@ func _process(delta: float) -> void:
 		var key := "%s_r%d" % [Defs.PHASE_NAMES[ph].to_lower().replace(" ", "_").replace("!", ""), int(Session.public.get("round", 0))]
 		if ph == Defs.Phase.POUR:
 			_shot(key, 2.2)
-		elif ph in [Defs.Phase.INTRO, Defs.Phase.ITEMS]:
+		elif ph == Defs.Phase.INTRO:
+			_shot(key, 6.0)
+		elif ph == Defs.Phase.ITEMS:
 			_shot(key, 1.2)
 		elif ph == Defs.Phase.TALK:
 			_shot(key, 6.0)

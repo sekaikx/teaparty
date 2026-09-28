@@ -180,13 +180,24 @@ func _build_rig(ghost: bool) -> void:
 	var skin := _skin()
 	var body_col: Color = skin.get("body", Color("ffe3b8"))
 	var accent: Color = skin.get("accent", Color("ff8fab"))
+	# Picked in the wardrobe; a look without them (an older client) falls back to the name.
 	var hair_col: Color = HAIR[(_hash() / 7) % HAIR.size()]
+	if Cosmetics.DYES.has(_look_id(&"dye")):
+		hair_col = Cosmetics.DYES[_look_id(&"dye")]["color"]
 	var build: Array = BUILDS[(_hash() / 13) % BUILDS.size()]
+	if Cosmetics.SHAPES.has(_look_id(&"shape")):
+		var sh: Dictionary = Cosmetics.SHAPES[_look_id(&"shape")]
+		build = [float(sh["belly"]), float(sh["eyes"])]
 	var belly: float = build[0]
 	var eye_k: float = build[1]
 	_belly = belly
 	var outfit: StringName = OUTFITS[(_hash() / 29) % OUTFITS.size()]
+	if Cosmetics.COLLARS.has(_look_id(&"collar")):
+		outfit = _look_id(&"collar")
 	var hairstyle: StringName = HAIRSTYLES[(_hash() / 61) % HAIRSTYLES.size()]
+	if Cosmetics.HAIRDOS.has(_look_id(&"hair")):
+		hairstyle = _look_id(&"hair")
+	var eye_style := _look_id(&"eyes")
 	var g := Mats.ghost()
 	_shirt = _vinyl(body_col, true)
 	_skin_mat = _shirt
@@ -225,6 +236,7 @@ func _build_rig(ghost: bool) -> void:
 	body.name = "Bean"
 	_jelly_parts.append(body)
 	if not ghost:
+		_build_pattern(_look_id(&"pattern"), body_col, accent, belly)
 		_build_outfit(outfit, body_col, accent, belly)
 	# Noodle arms with round mitts, coming out of the sides.
 	_sh_l = _pivot(_waist, Vector3(0.29 * belly, 0.3, 0), "ShoulderL")
@@ -256,7 +268,13 @@ func _build_rig(ghost: bool) -> void:
 		var blush := Mats.solid(body_col.lerp(Color("ff5f86"), 0.5), 0.9)
 		for side in [1.0, -1.0]:
 			Mats.mesh(_on_face(face, 0.185 * side, -0.035, -0.012), Mats.sphere(0.05, 0.1, 16), blush, Vector3.ZERO, Vector3.ZERO, Vector3(1.35, 0.8, 0.25))
-		_build_hair(face, hairstyle, _vinyl(hair_col, false, 0.45), 1.0)
+		var hair_mat := _vinyl(hair_col, false, 0.45)
+		if _look_id(&"dye") == &"rainbow":
+			hair_mat = _vinyl(hair_col, false, 0.3)
+			hair_mat.emission_enabled = true
+			hair_mat.emission = Color("ff5fa2")
+			hair_mat.emission_energy_multiplier = 0.25
+		_build_hair(face, hairstyle, hair_mat, 1.0)
 	# Big glossy eyes: a white, a black pupil that sloshes about, and a glint.
 	_eyes.clear()
 	_eye_mat = StandardMaterial3D.new()
@@ -273,6 +291,8 @@ func _build_rig(ghost: bool) -> void:
 		eye.add_child(pupil)
 		Mats.mesh(pupil, Mats.sphere(0.05, 0.1, 16), ink, Vector3.ZERO, Vector3.ZERO, Vector3(1, 1.12, 0.5))
 		Mats.mesh(pupil, Mats.sphere(0.015, 0.03, 8), glint, Vector3(0.018, 0.024, 0.024))
+		if not ghost:
+			_build_eye_style(eye, pupil, eye_style, side, body_col, ink, glint)
 		_eyes.append({"node": pupil, "off": Vector2(randf_range(-0.3, 0.3), -0.3), "vel": Vector2.ZERO})
 	_brows.clear()
 	for side in [1.0, -1.0]:
@@ -516,11 +536,117 @@ func _build_outfit(outfit: StringName, _body_col: Color, accent: Color, belly: f
 			var sc := Mats.mesh(_waist, Mats.torus(r * belly - 0.035, r * belly + 0.05, 28), acc, Vector3(0, y, 0), Vector3.ZERO, Vector3(1, 1, FLAT))
 			sc.name = "Scarf"
 			Mats.mesh(_waist, Mats.softbox(Vector3(0.09, 0.22, 0.045), 0.6), acc, ring.call(PI * 0.35, 0.03, -0.12), Vector3(0, 0, -10))
+		&"tie":
+			var knot: Vector3 = ring.call(PI * 0.5, 0.01, -0.01)
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.06, 0.05, 0.04), 0.6), acc, knot)
+			var yb := y - 0.15
+			var zb := bean_radius(yb) * belly * FLAT + 0.012
+			var tilt := rad_to_deg(atan2(zb - knot.z, 0.15))
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.08, 0.22, 0.02), 0.5, Vector2(1.2, 0.55)), acc, Vector3(0, y - 0.13, (knot.z + zb) * 0.5), Vector3(tilt, 0, 0))
+		&"rose":
+			var at: Vector3 = ring.call(PI * 0.3, 0.02, -0.08)
+			var petal := _vinyl(Color("e0284f"), false, 0.5)
+			for i in 5:
+				var a := TAU * i / 5.0
+				Mats.mesh(_waist, Mats.sphere(0.028), petal, at + Vector3(cos(a) * 0.022, sin(a) * 0.022, 0.0))
+			Mats.mesh(_waist, Mats.sphere(0.024), _vinyl(Color("a3123a"), false), at + Vector3(0, 0, 0.015))
+			Mats.mesh(_waist, Mats.sphere(0.03), _vinyl(Color("3f8f3a"), false), at + Vector3(0.03, -0.035, -0.005), Vector3.ZERO, Vector3(1.4, 0.6, 0.5))
+			_build_outfit(&"bowtie", _body_col, accent, belly)
+		&"medal":
+			var at: Vector3 = ring.call(PI * 0.5, 0.02, -0.09)
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.05, 0.08, 0.015), 0.4), acc, at + Vector3(0, 0.04, -0.005), Vector3(-15, 0, 0))
+			Mats.mesh(_waist, Mats.cylinder(0.045, 0.045, 0.015, 20), Mats.gold(), at + Vector3(0, -0.02, 0.01), Vector3(75, 0, 0))
+			Mats.mesh(_waist, Mats.sphere(0.018), Mats.solid(Color("c0303a"), 0.2, 0.3), at + Vector3(0, -0.02, 0.022))
+		&"cape":
+			var cloak := _vinyl(Color("1d1128"), false, 0.6)
+			var lining := _vinyl(accent, false, 0.5)
+			# A tall villain's collar standing up behind the head, lined in the accent colour.
+			for side in [1.0, -1.0]:
+				var a: float = PI * (1.5 + 0.28 * side)
+				var cp := Node3D.new()
+				_waist.add_child(cp)
+				cp.position = ring.call(a, 0.0, 0.12)
+				cp.rotation = Vector3(deg_to_rad(-25.0), -a + PI * 0.5, 0)
+				Mats.mesh(cp, Mats.softbox(Vector3(0.24, 0.26, 0.025), 0.4, Vector2(1.35, 0.8)), cloak, Vector3.ZERO)
+				Mats.mesh(cp, Mats.softbox(Vector3(0.2, 0.22, 0.01), 0.4, Vector2(1.35, 0.8)), lining, Vector3(0, 0, 0.018))
+			Mats.mesh(_waist, Mats.softbox(Vector3(0.5 * belly, 0.48, 0.05), 0.5, Vector2(0.8, 1.15)), cloak, Vector3(0, y - 0.22, -(bean_radius(y - 0.2) * belly * FLAT + 0.035)), Vector3(8, 0, 0))
+			Mats.mesh(_waist, Mats.sphere(0.028), Mats.gold(), ring.call(PI * 0.5, 0.015, 0.0))
 		_:
 			var at: Vector3 = ring.call(PI * 0.5, 0.01, 0.0)
 			Mats.mesh(_waist, Mats.sphere(0.035, 0.06), acc, at)
 			for side in [1.0, -1.0]:
 				Mats.mesh(_waist, Mats.softbox(Vector3(0.1, 0.09, 0.045), 0.55, Vector2(0.5, 1.0)), acc, at + Vector3(0.065 * side, 0, -0.012), Vector3(0, 0, 90 * side))
+
+
+func _look_id(key: StringName) -> StringName:
+	return StringName(str(look.get(String(key), "")))
+
+
+## Eye styles: lashes, lids and extra sparkle on the googly eyes.
+func _build_eye_style(eye: Node3D, pupil: Node3D, style: StringName, side: float, body_col: Color, ink: Material, glint: Material) -> void:
+	var lid := _vinyl(body_col.darkened(0.22), false, 0.45)
+	match style:
+		&"lashes":
+			for k in 3:
+				var a := deg_to_rad(95.0 - k * 28.0)
+				var p := Vector3(cos(a) * 0.085 * side, sin(a) * 0.1, 0.03)
+				Mats.mesh(eye, Mats.softbox(Vector3(0.018, 0.07, 0.016), 0.5), ink, p, Vector3(0, 0, rad_to_deg(a - PI * 0.5) * side))
+		&"sleepy":
+			Mats.mesh(eye, Mats.sphere(0.086, 0.172, 20), lid, Vector3(0, 0.035, 0.01), Vector3.ZERO, Vector3(1.06, 0.72, 0.72))
+			Mats.mesh(eye, Mats.softbox(Vector3(0.17, 0.014, 0.02), 0.6), ink, Vector3(0, -0.01, 0.06))
+		&"suspicious":
+			Mats.mesh(eye, Mats.sphere(0.086, 0.172, 20), lid, Vector3(0, 0.05, 0.01), Vector3(0, 0, 18 * side), Vector3(1.08, 0.66, 0.72))
+			Mats.mesh(eye, Mats.softbox(Vector3(0.17, 0.014, 0.02), 0.6), ink, Vector3(0, 0.0, 0.06), Vector3(0, 0, 18 * side))
+		&"sparkle":
+			Mats.mesh(pupil, Mats.sphere(0.012, 0.024, 8), glint, Vector3(-0.02, -0.022, 0.028))
+			for k in 4:
+				Mats.mesh(pupil, Mats.box(Vector3(0.058, 0.011, 0.006)), glint, Vector3(0.012, 0.018, 0.03), Vector3(0, 0, 45 * k))
+		&"beady":
+			eye.scale *= 0.7
+			pupil.scale = Vector3(1.25, 1.25, 1.0)
+
+
+## A pattern on the body, below the collar.
+func _build_pattern(pattern: StringName, body_col: Color, accent: Color, belly: float) -> void:
+	var on_body := func(a: float, y: float, out: float = 0.0) -> Vector3:
+		var r := bean_radius(y) + out
+		return Vector3(cos(a) * r * belly, y, sin(a) * r * belly * FLAT)
+	var decal := func(pos: Vector3, size: float, mat: Material, flat: float = 0.25) -> MeshInstance3D:
+		var n := Vector3(pos.x, 0.0, pos.z / (FLAT * FLAT)).normalized()
+		var mi := Mats.mesh(_waist, Mats.sphere(size, size * 2.0, 14), mat, pos)
+		mi.basis = Basis.looking_at(-n, Vector3.UP).scaled(Vector3(1, 1, flat))
+		return mi
+	match pattern:
+		&"spots":
+			var m := _vinyl(accent, false, 0.5)
+			var k := 0
+			for y in [0.02, 0.14, 0.26]:
+				for i in 7:
+					var a := TAU * (i + (0.5 if k % 2 == 1 else 0.0)) / 7.0
+					decal.call(on_body.call(a, y), 0.04, m)
+				k += 1
+		&"belly":
+			decal.call(on_body.call(PI * 0.5, 0.1, -0.02), 0.17, _vinyl(body_col.lightened(0.45), false, 0.5), 0.3)
+		&"stripes":
+			var m := _vinyl(accent, false, 0.5)
+			for y in [-0.04, 0.08, 0.2]:
+				var r := bean_radius(y) * belly
+				Mats.mesh(_waist, Mats.torus(r - 0.012, r + 0.014, 32), m, Vector3(0, y, 0), Vector3.ZERO, Vector3(1, 1, FLAT))
+		&"heart":
+			var m := _vinyl(accent, false, 0.45)
+			var hp := Node3D.new()
+			_waist.add_child(hp)
+			hp.position = on_body.call(PI * 0.5, 0.14, -0.012)
+			hp.rotation_degrees.x = -12.0
+			for side in [1.0, -1.0]:
+				Mats.mesh(hp, Mats.sphere(0.055), m, Vector3(0.045 * side, 0.03, 0), Vector3.ZERO, Vector3(1, 1, 0.35))
+			Mats.mesh(hp, Mats.softbox(Vector3(0.09, 0.09, 0.035), 0.35), m, Vector3(0, -0.012, 0), Vector3(0, 0, 45))
+		&"stars":
+			var m := Mats.glow(Color("fff1a8"), 0.9)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = _hash()
+			for i in 16:
+				decal.call(on_body.call(rng.randf() * TAU, rng.randf_range(-0.05, 0.28)), rng.randf_range(0.012, 0.024), m)
 
 
 ## A little something on top of the bean (hats sit over it).
@@ -541,6 +667,24 @@ func _build_hair(face: Node3D, style: StringName, hair: Material, _k: float) -> 
 		&"long":
 			for side in [1.0, -1.0]:
 				Mats.mesh(face, Mats.sphere(0.07), hair, Vector3(0.27 * side * _belly, 0.1, -0.08))
+		&"pigtails":
+			for side in [1.0, -1.0]:
+				Mats.mesh(face, Mats.sphere(0.075), hair, Vector3(0.24 * side * _belly, top - 0.06, -0.06), Vector3.ZERO, Vector3(0.9, 1.25, 0.9))
+				Mats.mesh(face, Mats.sphere(0.03), _vinyl(Color("ff5f86"), false), Vector3(0.2 * side * _belly, top - 0.02, -0.05))
+		&"mohawk":
+			for i in 5:
+				var a := deg_to_rad(-60.0 + i * 30.0)
+				Mats.mesh(face, Mats.sphere(0.045), hair, Vector3(0, cos(a) * (top + 0.02), sin(a) * (top + 0.02)), Vector3(rad_to_deg(a), 0, 0), Vector3(0.45, 1.6, 0.9))
+		&"afro":
+			for i in 14:
+				var a := TAU * i / 7.0
+				var ring := 0 if i < 7 else 1
+				var up := 0.55 if ring == 0 else 0.85
+				var d := Vector3(cos(a) * sqrt(1.0 - up * up), up, sin(a) * sqrt(1.0 - up * up) - 0.15).normalized()
+				Mats.mesh(face, Mats.sphere(0.085), hair, d * (top + 0.01))
+			Mats.mesh(face, Mats.sphere(0.1), hair, Vector3(0, top + 0.03, -0.03))
+		&"none":
+			pass
 		_:
 			Mats.mesh(face, Mats.cylinder(0.016, 0.042, 0.1, 10), hair, Vector3(0.02, top + 0.03, 0.02), Vector3(0, 0, -18))
 
@@ -578,6 +722,35 @@ func _build_face(face: Node3D, id: StringName) -> void:
 			for side in [1.0, -1.0]:
 				Mats.mesh(_on_face(face, 0.1 * side, 0.06, 0.03), Mats.softbox(Vector3(0.14, 0.085, 0.025), 0.45), s)
 			Mats.mesh(_on_face(face, 0.0, 0.08, 0.03), Mats.box(Vector3(0.07, 0.016, 0.016)), s)
+		&"freckles":
+			var fm := Mats.solid(Color("a0522d"), 0.8)
+			for side in [1.0, -1.0]:
+				for p: Vector2 in [Vector2(0.15, -0.01), Vector2(0.19, -0.05), Vector2(0.14, -0.06)]:
+					Mats.mesh(_on_face(face, p.x * side, p.y, -0.004), Mats.sphere(0.011), fm, Vector3.ZERO, Vector3.ZERO, Vector3(1, 1, 0.4))
+		&"lipstick":
+			var red := Mats.solid(Color("d61f4c"), 0.25)
+			_mouth.material_override = red
+			_smile.material_override = red
+		&"plaster":
+			var pl := _vinyl(Color("e3a36b"), false, 0.8)
+			var pp := _on_face(face, -0.16, 0.16, 0.012)
+			for k in [40.0, -40.0]:
+				Mats.mesh(pp, Mats.softbox(Vector3(0.17, 0.05, 0.016), 0.5), pl, Vector3.ZERO, Vector3(0, 0, k))
+		&"eyepatch":
+			var bl := Mats.solid(Color("15121a"), 0.5)
+			Mats.mesh(_on_face(face, 0.1, 0.055, 0.035), Mats.cylinder(0.075, 0.075, 0.02, 20), bl, Vector3.ZERO, Vector3(90, 0, 0), Vector3(1, 1, 1.15))
+		&"pipe":
+			var wood := Mats.solid(Color("6b3b1f"), 0.5)
+			var mp := _on_face(face, -0.07, -0.095, 0.01)
+			Mats.mesh(mp, Mats.cylinder(0.014, 0.014, 0.14, 8), wood, Vector3(-0.05, -0.02, 0.05), Vector3(70, 0, 40))
+			Mats.mesh(mp, Mats.cylinder(0.042, 0.034, 0.08, 14), wood, Vector3(-0.11, 0.0, 0.1))
+			var bub := StandardMaterial3D.new()
+			bub.albedo_color = Color(0.8, 0.95, 1.0, 0.35)
+			bub.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			bub.roughness = 0.05
+			bub.rim_enabled = true
+			Mats.mesh(mp, Mats.sphere(0.05), bub, Vector3(-0.17, 0.09, 0.12))
+			Mats.mesh(mp, Mats.sphere(0.028), bub, Vector3(-0.23, 0.17, 0.1))
 		&"beard":
 			Mats.mesh(_on_face(face, 0.0, -0.15, -0.05), Mats.softbox(Vector3(0.4, 0.26, 0.16), 0.7, Vector2(1.1, 1.0)), _vinyl(Color("f2f2f2"), false, 0.9))
 
@@ -903,6 +1076,10 @@ func _target_pose() -> Dictionary:
 
 
 func _process(delta: float) -> void:
+	if _hat and is_instance_valid(_hat):
+		var prop := _hat.get_node_or_null("Propeller") as Node3D
+		if prop:
+			prop.rotation.y += delta * float(prop.get_meta(&"spin", 8.0))
 	_t += delta
 	if not _ragdoll_parts.is_empty() and _corpse_head:
 		_googly(_corpse_head, _corpse_eyes, delta)

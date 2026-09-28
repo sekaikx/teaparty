@@ -100,8 +100,10 @@ func equip(category: StringName, id: StringName) -> void:
 
 ## The look sent to other players.
 func look() -> Dictionary:
-	return {"hat": equipped[&"hat"], "cup": equipped[&"cup"], "death": equipped[&"death"],
-		"skin": equipped[&"skin"], "title": equipped[&"title"]}
+	var out := {}
+	for k: StringName in Cosmetics.LOOK_KEYS:
+		out[String(k)] = equipped.get(k, Cosmetics.DEFAULT_EQUIP[k])
+	return out
 
 
 func titles_unlocked() -> Array[StringName]:
@@ -254,12 +256,27 @@ func save_profile() -> void:
 	cf.save(PATH)
 
 
+## New players (and older saves, from before shapes, eyes, hair and collars could be picked)
+## start with a random mix of the free options, so no two new beans look the same.
+func _random_free_look(saved: Dictionary) -> void:
+	for c: StringName in [&"shape", &"eyes", &"hair", &"dye", &"collar", &"skin"]:
+		if saved.has(String(c)):
+			continue
+		var free: Array = []
+		for id: StringName in Cosmetics.CATEGORIES[c]:
+			if int(Cosmetics.CATEGORIES[c][id].get("price", 0)) == 0:
+				free.append(id)
+		if not free.is_empty():
+			equipped[c] = free[randi() % free.size()]
+
+
 func load_profile() -> void:
 	if ephemeral:
 		return
 	var cf := ConfigFile.new()
 	if cf.load(PATH) != OK:
 		player_name = "Guest %d" % randi_range(100, 999)
+		_random_free_look({})
 		return
 	player_name = String(cf.get_value("player", "name", player_name))
 	xp = int(cf.get_value("player", "xp", 0))
@@ -270,6 +287,7 @@ func load_profile() -> void:
 	var eq: Dictionary = cf.get_value("player", "equipped", {})
 	for k: String in eq:
 		equipped[StringName(k)] = StringName(String(eq[k]))
+	_random_free_look(eq)
 	achievements = cf.get_value("player", "achievements", {})
 	var st: Dictionary = cf.get_value("player", "stats", {})
 	for k: String in st:

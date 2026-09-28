@@ -38,6 +38,8 @@ var _pass: Button
 var _ready: Button
 var _keys: HBoxContainer
 var _cake_label: Label
+## The meeting's speaking order (seats), from the host.
+var _talk_order: Array = []
 var _stamp: Label
 var _stamp_tw: Tween
 var _note: PanelContainer
@@ -538,7 +540,7 @@ func _wiggle_coach() -> void:
 func _refresh() -> void:
 	var ph := Session.phase
 	var r := int(Session.public.get("round", 0))
-	(_round_chip.get_child(0) as Label).text = ("ROUND %d%s" % [r, "  LACED POT" if Session.public.get("laced", false) else ""]) if r > 0 else "WELCOME"
+	(_round_chip.get_child(0) as Label).text = ("ROUND %d/%d%s" % [r, _max_rounds(), "  LACED POT" if Session.public.get("laced", false) else ""]) if r > 0 else "WELCOME"
 	for i in STEPS.size():
 		var on: bool = STEPS[i][0] == ph or (ph == P.REVEAL and STEPS[i][0] == P.DRINK) or (ph == P.DEAL and STEPS[i][0] == P.POUR) \
 			or (ph == P.EJECT and STEPS[i][0] == P.VOTE)
@@ -749,9 +751,15 @@ func _coach_text_for() -> Array:
 		P.TALK:
 			if bool(Session.seat_info(Session.my_seat).get("ready", false)):
 				return ["READY TO VOTE", "Keep arguing until everyone's ready (or the clock runs out).", Ui.MINT]
+			var first := ""
+			if not _talk_order.is_empty():
+				first = "YOU go first!" if int(_talk_order[0]) == Session.my_seat else "%s goes first, then round the table." % Session.seat_name(int(_talk_order[0]))
+			var last := int(Session.public.get("round", 0)) >= _max_rounds()
 			if poisoner:
-				return ["MEETING: DON'T GET CAUGHT", "Say you poured somewhere else. Blame someone. Don't get caught.", Ui.PINK]
-			return ["MEETING: WHO DID IT?", "Say where you poured and what you saw. Spot the lie. Then READY TO VOTE.", Ui.PINK]
+				return ["MEETING: DON'T GET CAUGHT", ("FINAL ROUND: survive this vote and you win! " if last else "") + "Say you poured somewhere else. Blame someone. " + first, Ui.PINK]
+			if last:
+				return ["FINAL ROUND: VOTE THEM OUT NOW", "If the poisoner survives this vote, they win. " + first, Ui.PINK]
+			return ["MEETING: WHO DID IT?", "Say where you poured and what you saw. Spot the lie. " + first, Ui.PINK]
 		P.VOTE:
 			if bool(Session.seat_info(Session.my_seat).get("voted", false)):
 				return ["VOTE CAST", "Waiting for the others...", Ui.MINT]
@@ -821,55 +829,69 @@ func _refresh_notes() -> void:
 			_points_box.add_child(Ui.wrap(Ui.label("- " + line, 13, Ui.CREAM, 700), 270))
 
 
+func _max_rounds() -> int:
+	return int(Session.match_rules.get("max_rounds", 8))
+
+
 func _show_role() -> void:
+	# Wait for the loading screen to go (on a slow PC it would hide the card), up to 10 s.
+	var t0 := Time.get_ticks_msec()
+	while not get_tree().root.find_children("*", "LoadingScreen", true, false).is_empty() and Time.get_ticks_msec() - t0 < 10000:
+		await get_tree().process_frame
+	# Short enough to read in the 7 seconds it's up (a Discord group is all reading at once).
 	var role: StringName = Session.private.get("role", &"guest")
 	var n := int(Session.public.get("poisoners", 1))
-	var head := "YOU'RE AN INNOCENT GUEST"
-	var body := "%s at this table is a secret POISONER. Each round everyone serves a cup in the dark. Remember what you glimpse, catch the liar at the meeting, and vote them out." % ("Someone" if n == 1 else "Two guests")
-	var col := Ui.MINT
-	var extras: Array[String] = []
+	var mode := String(Session.public.get("mode", "classic"))
 	var rip: Dictionary = Session.public.get("roles_in_play", {})
-	if rip.get("inspector", false):
-		extras.append("an INSPECTOR")
-	if rip.get("physician", false):
-		extras.append("a PHYSICIAN")
-	if rip.get("butler", false) and role != &"butler":
-		extras.append("a BUTLER (on nobody's side)")
-	if role == &"butler":
-		head = "YOU ARE THE BUTLER"
-		body = String(Defs.ROLES[role]["desc"])
-		col = Ui.SKY
-	elif role == &"inspector" or role == &"physician":
-		head = "YOU ARE %s" % Defs.role_name(role).to_upper()
-		body = String(Defs.ROLES[role]["desc"]) + " You're innocent: help the guests find the poisoner."
-		col = Ui.YELLOW if role == &"inspector" else Ui.MINT
-	elif not extras.is_empty():
-		body += " Somewhere among the guests: %s." % " and ".join(extras)
-	if role != &"poisoner" and bool(Session.private.get("hunted", false)):
-		body += " And a warning: SOMEONE HAS YOUR NAME ON A HIT LIST. You get an extra item each round: stay alive!"
-	elif role != &"poisoner" and String(Session.public.get("mode", "")) == "hitlist":
-		body += " HIT LIST: the poisoner has a secret target. If the target dies, the poisoner wins."
-	elif role != &"poisoner" and String(Session.public.get("mode", "")) == "rivals" and n > 1:
-		body += " RIVALS: the two poisoners are enemies of each other too. Get both out to win."
-	if role == &"poisoner":
-		head = "YOU ARE THE POISONER"
-		body = "Nobody knows. Each round, pour poison into someone's cup in the dark. At the meeting, lie about where you poured. Win when there are as many poisoners as guests left."
-		var partners: Array = Session.private.get("partners", [])
-		if not partners.is_empty():
-			var names: Array[String] = []
-			for p: int in partners:
-				names.append(Session.seat_name(p))
-			body += " Your partner in crime: %s." % ", ".join(names)
-		elif n > 1 and String(Session.public.get("mode", "")) == "rivals":
-			body += " But there's a RIVAL poisoner too, and they're not on your side. Only one of you can win: poison them, or get them voted out."
-		elif n > 1:
-			body += " There's a SECOND poisoner at the table... but you don't know who. Careful whose cup you pick."
-		var hit := int(Session.private.get("hit", -1))
-		if hit >= 0:
-			body = "Nobody knows. Your secret target: %s. Poison them (it counts from round %d on) and you win; if they get voted out, the hit is off. Or win the usual way: as many poisoners as guests left." % [Session.seat_name(hit).to_upper(), int(Session.public.get("hit_round", 3))]
-		if not extras.is_empty():
-			body += " Beware: %s is hiding among the guests." % " and ".join(extras)
-		col = Ui.PINK
+	var head := "YOU'RE AN INNOCENT GUEST"
+	var lines: Array[String] = []
+	var goal := "Find the %s and vote them out." % ("poisoner" if n == 1 else "TWO poisoners")
+	var col := Ui.MINT
+	match role:
+		&"poisoner":
+			head = "YOU ARE THE POISONER"
+			col = Ui.PINK
+			lines.append("Pour poison in the dark. At the meeting, lie about where you poured.")
+			var partners: Array = Session.private.get("partners", [])
+			if not partners.is_empty():
+				var names: Array[String] = []
+				for p: int in partners:
+					names.append(Session.seat_name(p))
+				lines.append("Your partner in crime: %s." % ", ".join(names))
+			elif n > 1 and mode == "rivals":
+				lines.append("A RIVAL poisoner is at the table too. Only one of you can win.")
+			elif n > 1:
+				lines.append("There's a second poisoner... you don't know who.")
+			goal = "Survive until there are as many poisoners as guests."
+			var hit := int(Session.private.get("hit", -1))
+			if hit >= 0:
+				goal = "Poison %s (from round %d) and you win at once." % [Session.seat_name(hit).to_upper(), int(Session.public.get("hit_round", 3))]
+		&"butler":
+			head = "YOU ARE THE BUTLER"
+			col = Ui.SKY
+			lines.append("On nobody's side. Each round you may secretly swap two cups (TIDY UP).")
+			goal = "Still be alive when the party ends."
+		&"inspector":
+			head = "YOU ARE THE INSPECTOR"
+			col = Ui.YELLOW
+			lines.append("Each round, INSPECT a guest: poison on their hands = they poured it THIS round.")
+			lines.append("Careful: the poisoner can claim to be you.")
+		&"physician":
+			head = "YOU ARE THE PHYSICIAN"
+			lines.append("Each round, WATCH OVER a guest: if they drink poison, you save them.")
+		_:
+			lines.append("Serve a cup in the dark. Remember what you glimpse. Spot the liar.")
+	if role != &"poisoner":
+		if bool(Session.private.get("hunted", false)):
+			lines.append("SOMEONE HAS YOUR NAME ON A HIT LIST. You get an extra item: stay alive!")
+		elif mode == "hitlist":
+			lines.append("HIT LIST: the poisoner has a secret target. If it dies, they win.")
+		elif mode == "rivals" and n > 1:
+			lines.append("RIVALS: two poisoners who hate each other too. Get both out.")
+	var extras: Array[String] = []
+	for r: String in ["inspector", "physician", "butler"]:
+		if rip.get(r, false) and String(role) != r:
+			extras.append(Defs.role_name(StringName(r)).to_upper().replace("THE ", ""))
 	var p := Ui.panel()
 	var v := Ui.vbox(8)
 	p.add_child(v)
@@ -880,18 +902,25 @@ func _show_role() -> void:
 				v.add_child(Ui.label("DAILY CHALLENGE: %s" % String(d["name"]).to_upper(), 20, Ui.ORANGE, 800))
 				v.add_child(Ui.wrap(Ui.label(String(d["desc"]), 16, Ui.CREAM, 700), 560))
 	v.add_child(Ui.title(head, 44, col))
-	v.add_child(Ui.wrap(Ui.label(body, 20), 560))
+	for l in lines:
+		v.add_child(Ui.wrap(Ui.label(l, 20), 560))
+	v.add_child(Ui.wrap(Ui.label("GOAL: " + goal, 21, Ui.YELLOW, 800), 560))
+	if not extras.is_empty():
+		v.add_child(Ui.wrap(Ui.label("Also at the table (secretly): " + ", ".join(extras), 16, Ui.MUTED, 700), 560))
+	v.add_child(Ui.label("(click to close)", 13, Ui.MUTED))
 	var c := Ui.center(p)
 	_root.add_child(c)
 	Ui.pop_in(p)
 	Sfx.play(&"secret", -3.0)
+	p.mouse_filter = Control.MOUSE_FILTER_STOP
+	p.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventMouseButton and (e as InputEventMouseButton).pressed and is_instance_valid(c):
+			c.queue_free())
 	var tw := c.create_tween()
-	tw.tween_interval(4.5)
+	tw.tween_interval(7.5)
 	tw.tween_property(p, "modulate:a", 0.0, 0.3)
 	tw.tween_callback(c.queue_free)
 
-
-## Lights down while everyone serves (nobody can see where anyone pours).
 func _set_dark(on: bool) -> void:
 	if _dark_tw and _dark_tw.is_valid():
 		_dark_tw.kill()
@@ -1191,8 +1220,13 @@ func _on_event(ev: Dictionary) -> void:
 			_note.visible = false
 			_my_pour = ""
 			_my_lock = ""
-			stamp("ROUND %d" % int(ev["round"]), Ui.YELLOW, 1.6)
-			_log("ROUND %d" % int(ev["round"]), Ui.YELLOW)
+			_talk_order = []
+			if int(ev["round"]) >= _max_rounds():
+				stamp("FINAL ROUND!", Ui.PINK, 2.2)
+				_log("FINAL ROUND: if the poisoner is still here after this vote, they WIN.", Ui.PINK)
+			else:
+				stamp("ROUND %d" % int(ev["round"]), Ui.YELLOW, 1.6)
+				_log("ROUND %d of %d" % [int(ev["round"]), _max_rounds()], Ui.YELLOW)
 		"pour":
 			if int(ev["seat"]) != Session.my_seat:
 				_log("%s served a cup... somewhere" % name_of.call(ev["seat"]), Ui.MUTED)
@@ -1368,6 +1402,13 @@ func _on_event(ev: Dictionary) -> void:
 				_play_moments(0.0)
 			else:
 				_play_moments(3.8)
+		"talk_order":
+			_talk_order = ev.get("order", [])
+			if not _talk_order.is_empty():
+				var names: Array[String] = []
+				for s: int in _talk_order:
+					names.append(name_of.call(s))
+				_log("SPEAKING ORDER: " + " > ".join(names), Ui.SKY)
 		"talking_points":
 			_talking = ev.get("lines", [])
 			_reveal.visible = false

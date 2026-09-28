@@ -10,7 +10,7 @@ const TIPS := [
 	"The Physician can save a poisoned guest with smelling salts. Just not the same guest two rounds running.",
 	"Anyone can CLAIM to be the Inspector. If two guests do, one of them is lying.",
 	"Sugar hides everything from a sniff. Handy if you have something to hide...",
-	"Scared your cup is poisoned? Press F at the toast and cake it off the table.",
+	"Scared your cup is poisoned? Press F at the toast and cake it off the table. You get 4 cakes a match: don't waste them.",
 	"Your glimpse in the dark is always true. What people SAY about it isn't.",
 	"The WHO SAID WHAT board flags stories that don't add up. Read it before you vote.",
 	"No mic? Press Enter to type in the chat. Ghosts can only chat with other ghosts.",

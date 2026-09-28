@@ -17,7 +17,7 @@ func _ready() -> void:
 	for c in get_tree().root.find_children("*", "Wardrobe", true, false):
 		w = c
 	var n := 0
-	for cat: StringName in [&"hat", &"face", &"cup", &"skin", &"death", &"title"]:
+	for cat: StringName in Cosmetics.CATEGORIES.keys() + [&"title"]:
 		w.set("_category", cat)
 		w.call(&"_refresh")
 		await get_tree().process_frame
@@ -34,7 +34,7 @@ func _ready() -> void:
 			if cat == &"death":
 				w.call(&"_preview_death")
 				await get_tree().create_timer(1.6).timeout
-			if n % 6 == 0:
+			if n % 4 == 0:
 				await RenderingServer.frame_post_draw
 				get_viewport().get_texture().get_image().save_png("%s/%s_%s.png" % [out, cat, id])
 		# Buy and wear the first paid item of each category.

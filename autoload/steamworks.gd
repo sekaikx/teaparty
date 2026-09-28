@@ -99,6 +99,10 @@ func _ready() -> void:
 		id = int(steam.call("getSteamID"))
 	steam_id = id
 	persona = String(steam.call("getPersonaName"))
+	# On a Discord call everyone knows each other by their Steam / Discord names, not "Guest 819".
+	if persona != "" and (Profile.player_name == "Guest" or Profile.player_name.begins_with("Guest ")):
+		Profile.player_name = persona.left(24)
+		Profile.save_profile()
 	# Start Valve's relay network now so the first connection doesn't have to wait for it.
 	if steam.has_method(&"initRelayNetworkAccess"):
 		steam.call(&"initRelayNetworkAccess")

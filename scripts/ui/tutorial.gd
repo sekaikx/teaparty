@@ -17,7 +17,7 @@ const PAGES := [
 		"text": "When the lights come back you learn ONE thing: \"You saw Baron pour into Ada's cup.\" Then items: SNIFF a cup for poison, WATCH a guest to see where they poured, read the TEA LEAVES (how many poured into a cup), SWAP two cups, or ring for a FRESH CUP. From round 2, twists shake things up: Blackout, Full Moon, Gossip..."},
 	{"title": "4. THE TOAST", "color": Color("4cc9f0"),
 		"icons": [["key", "F"], ["cup"], ["ing", Defs.Ingredient.ANTIDOTE]],
-		"text": "Everyone raises their cup and drinks. Scared yours is poisoned? Press F to throw a cake at it and it spills. Whoever drank poison falls. The game never says who poured it."},
+		"text": "Everyone raises their cup and drinks. Scared yours is poisoned? Press F to throw a cake at it and it spills. You only get 4 cakes for the WHOLE party, so save them. Whoever drank poison falls. The game never says who poured it."},
 	{"title": "5. THE MEETING + THE VOTE", "color": Color("3ddc97"),
 		"icons": [["key", "V"], ["arrow"], ["ghost"]],
 		"text": "Now talk (Discord, or hold V). \"Where did YOU pour?\" \"I saw Clara pour into Ada's cup!\" \"No, I poured sugar into Baron's!\" Someone is lying (the WHO SAID WHAT board flags stories that don't add up). The poisoned get one line of last words. Then vote: most votes gets thrown out."},
