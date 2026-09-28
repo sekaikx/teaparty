@@ -117,6 +117,9 @@ func _count_event(ev: Dictionary) -> void:
 
 
 func _apply_rules() -> void:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--role="):
+			Session.debug_role = StringName(a.get_slice("=", 1))
 	if "--night" in OS.get_cmdline_user_args():
 		Net.set_rule("night", true)
 	if _pace:

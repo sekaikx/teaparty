@@ -18,6 +18,17 @@ const CHANNEL := 0
 
 var transmitting := false
 var mic_error := ""
+## Live input level 0..1 (for the meters), and whether any sound has come in since the mic opened.
+var level := 0.0
+var heard_input := false
+## Settings > Test microphone: keep the mic open and (optionally) play it back to yourself.
+var testing := false
+var hear_myself := false
+## QA: transmit as if push-to-talk were held.
+var force_talk := false
+var _silent_for := 0.0
+var _loop: AudioStreamGeneratorPlayback
+var _loop_player: AudioStreamPlayer
 
 var _mic: AudioStreamPlayer
 var _capture: AudioEffectCapture
@@ -38,14 +49,23 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	var want := Input.is_action_pressed(&"push_to_talk") and bool(Profile.settings.get("mic", true)) \
-		and multiplayer.multiplayer_peer != null and not _typing()
+	var enabled := bool(Profile.settings.get("mic", true))
+	var mp := multiplayer.multiplayer_peer
+	# Only once actually connected (while a join is still connecting there's nobody to send to).
+	var online := mp != null and not (mp is OfflineMultiplayerPeer) \
+		and mp.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED and (not Net.is_solo or force_talk)
+	var want := enabled and online and (force_talk or (Input.is_action_pressed(&"push_to_talk") and not _typing()))
+	# The microphone stays open for the whole session (opening it on every key press cut off the
+	# start of each sentence); only what's said while the key is held is sent.
+	_set_mic(testing or (enabled and online))
 	if want != transmitting:
 		transmitting = want
-		_set_mic(want)
+		if want and _capture:
+			_capture.clear_buffer()
+		if not want:
+			_flush()
 		_mark(_me(), want)
-	if transmitting:
-		_pump_mic()
+	_pump_mic(delta)
 	for peer: int in _speaking.keys():
 		if peer == _me() and transmitting:
 			continue
@@ -93,22 +113,45 @@ func _set_mic(on: bool) -> void:
 		_capture = AudioServer.get_bus_effect(AudioServer.get_bus_index(&"Mic"), 0) as AudioEffectCapture
 	if _mic == null:
 		return
-	if on:
+	if on and not _mic.playing:
 		if _capture:
 			_capture.clear_buffer()
+		heard_input = false
+		_silent_for = 0.0
 		_mic.play()
-	else:
+	elif not on and _mic.playing:
 		_mic.stop()
 		_flush()
+		level = 0.0
 
 
-func _pump_mic() -> void:
-	if _capture == null:
+## Is the microphone open but giving nothing but silence? (Unplugged, wrong device, or blocked
+## by Windows' microphone privacy setting.)
+func seems_silent() -> bool:
+	return _mic != null and _mic.playing and _silent_for > 2.0 and not heard_input
+
+
+func _pump_mic(delta: float) -> void:
+	if _capture == null or _mic == null or not _mic.playing:
 		return
 	var n := _capture.get_frames_available()
 	if n <= 0:
+		_silent_for += delta
 		return
 	var frames := _capture.get_buffer(n)
+	var peak := 0.0
+	for f in frames:
+		peak = maxf(peak, maxf(absf(f.x), absf(f.y)))
+	level = maxf(peak, level * 0.85)
+	if peak > 0.004:
+		heard_input = true
+		_silent_for = 0.0
+	else:
+		_silent_for += delta
+	if testing and hear_myself:
+		_loopback(frames)
+	if not transmitting:
+		return
 	var step := AudioServer.get_mix_rate() / RATE
 	for f in frames:
 		# Box-filter decimation: average the input frames that fall into each output sample.
@@ -129,6 +172,9 @@ func _flush() -> void:
 		return
 	var pkt := _out
 	_out = PackedByteArray()
+	var mp := multiplayer.multiplayer_peer
+	if mp == null or mp is OfflineMultiplayerPeer or mp.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
+		return
 	if Net.is_host():
 		_relay(_me(), pkt)
 	else:
@@ -174,6 +220,32 @@ func _can_hear(speaker: int, listener: int) -> bool:
 	if speaker_alive:
 		return true
 	return not listener_alive or bool(Session.match_rules.get("ghosts_talk_to_living", false))
+
+
+## Settings: hear your own microphone (a short delay, so you can tell it's working).
+func _loopback(frames: PackedVector2Array) -> void:
+	if _loop_player == null:
+		var gen := AudioStreamGenerator.new()
+		gen.mix_rate = AudioServer.get_mix_rate()
+		gen.buffer_length = 0.3
+		_loop_player = AudioStreamPlayer.new()
+		_loop_player.stream = gen
+		_loop_player.bus = &"Voice"
+		add_child(_loop_player)
+		_loop_player.play()
+		_loop = _loop_player.get_stream_playback()
+	var n := mini(frames.size(), _loop.get_frames_available())
+	for i in n:
+		_loop.push_frame(frames[i])
+
+
+func stop_test() -> void:
+	testing = false
+	hear_myself = false
+	if _loop_player:
+		_loop_player.queue_free()
+		_loop_player = null
+		_loop = null
 
 
 # ---------------------------------------------------------------- playback
@@ -222,8 +294,16 @@ func _sink(peer: int) -> AudioStreamGeneratorPlayback:
 	return pb
 
 
+## QA (tools/mic_test.gd): keep every decoded sample that arrives.
+var qa_record := false
+var qa_rx := PackedFloat32Array()
+
+
 func _play(from: int, pkt: PackedByteArray) -> void:
 	_mark(from, true)
+	if qa_record:
+		for b in pkt:
+			qa_rx.append(_decode[b])
 	var pb := _sink(from)
 	if pb == null:
 		return

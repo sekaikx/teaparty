@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e9798c"/>
+      <stop offset="1" stop-color="#b53a53"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="134" r="112" fill="#1d1128" opacity="0.35"/>
+  <circle cx="128" cy="126" r="112" fill="url(#g)" stroke="#1d1128" stroke-width="11"/>
+  <path d="M52 104 A80 80 0 0 1 204 104 A96 70 0 0 0 52 104 Z" fill="#ffffff" opacity="0.28"/>
+  <g transform="translate(58.88 65.88) scale(0.5400)" fill="#1d1128" color="#1d1128" opacity="0.35"><path d="M232,108v40a16,16,0,0,1-16,16H164v52a16,16,0,0,1-16,16H108a16,16,0,0,1-16-16V164H40a16,16,0,0,1-16-16V108A16,16,0,0,1,40,92H92V40a16,16,0,0,1,16-16h40a16,16,0,0,1,16,16V92h52A16,16,0,0,1,232,108Z"/></g>
+  <g transform="translate(58.88 58.88) scale(0.5400)" fill="#ffffff" color="#ffffff"><path d="M232,108v40a16,16,0,0,1-16,16H164v52a16,16,0,0,1-16,16H108a16,16,0,0,1-16-16V164H40a16,16,0,0,1-16-16V108A16,16,0,0,1,40,92H92V40a16,16,0,0,1,16-16h40a16,16,0,0,1,16,16V92h52A16,16,0,0,1,232,108Z"/></g>
+</svg>

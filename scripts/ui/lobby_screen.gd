@@ -193,6 +193,8 @@ func _refresh_rules() -> void:
 			_refresh_rules())))
 	_rules.add_child(Ui.wrap(Ui.label(String(Defs.MODES[StringName(r["mode"])]["desc"]), 14, Ui.MUTED), 420))
 	_rules.add_child(_num("Max guests", "max_players", 3, 8, 1, host))
+	_rules.add_child(_flag("The Inspector (a detective, 5+ guests)", "inspector", host))
+	_rules.add_child(_flag("The Physician (a doctor, 6+ guests)", "physician", host))
 	_rules.add_child(_flag("Night party (moonlight and candles)", "night", host))
 	_rules.add_child(_flag("Helium voices (squeaky voice chat)", "helium", host))
 	var custom := host and Profile.custom_rules_unlocked()

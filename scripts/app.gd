@@ -46,7 +46,22 @@ func _ready() -> void:
 		toast(reason))
 	Session.match_began.connect(_start_game)
 	Session.match_over.connect(_show_results)
-	_show_title()
+	if "--qa" in OS.get_cmdline_user_args():
+		# The QA tools expect the title right away.
+		_show_title()
+	else:
+		# The loading screen picks up exactly where the boot splash left off (the same picture):
+		# the room models load on a thread behind it, then the title fades in.
+		var ls := LoadingScreen.new()
+		add_child(ls)
+		await get_tree().process_frame
+		await ls.preload_models()
+		ls.set_progress(0.9)
+		await get_tree().process_frame
+		_show_title()
+		# Stay up until the first frames (and their shaders) are done, so the menu never stutters.
+		await ls.until_smooth()
+		ls.finish()
 	if "--qa" in OS.get_cmdline_user_args():
 		var tool := "res://tools/qa_driver.gd"
 		for a in OS.get_cmdline_user_args():
@@ -189,9 +204,17 @@ func _open_tutorial() -> void:
 
 
 func _start_game() -> void:
+	# A loading screen with a tip while the table is built (it takes a moment).
+	var ls := LoadingScreen.new()
+	add_child(ls)
+	ls.set_progress(0.3)
+	await get_tree().process_frame
+	await get_tree().process_frame
 	var table := TableView.new()
 	_set_world(table)
 	table.build(Session.roster, Session.match_rules, Session.my_seat)
+	ls.set_progress(0.8)
+	_finish_loading(ls)
 	_set_screen(null)
 	_hud = GameHud.new()
 	add_child(_hud)
@@ -199,6 +222,11 @@ func _start_game() -> void:
 	_hud.leave_requested.connect(func() -> void: Net.leave())
 	_hud.settings_requested.connect(_open_settings)
 	Sfx.set_helium(bool(Session.match_rules.get("helium", false)))
+
+
+func _finish_loading(ls: LoadingScreen) -> void:
+	await ls.until_smooth()
+	ls.finish(0.3)
 
 
 func _show_results(res: Dictionary) -> void:

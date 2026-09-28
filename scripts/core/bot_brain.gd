@@ -5,7 +5,10 @@ extends RefCounted
 ## claims other guests make at the meeting.
 ##   Innocent bots pour harmless cards, tell the truth, and vote for whoever the evidence points at.
 ##   Poisoner bots poison an innocent, invent an alibi, sometimes frame someone, and vote with
-##   the crowd (never for a partner).
+##   the crowd (never for a partner). They like to poison whoever claimed to be the Inspector,
+##   and now and then claim to be the Inspector themselves.
+##   An Inspector bot inspects guests it hasn't cleared and calls out a poisoner the moment it
+##   finds one; a Physician bot watches over someone new each round.
 
 const I := Defs.Ingredient
 const IT := Defs.Item
@@ -21,6 +24,13 @@ var evidence: Array = []
 var heard: Dictionary = {}
 var poisoned: Array[int] = []
 var _claimed := 0
+var role: StringName = &"guest"
+## What this bot learned as the Inspector: seat -> guilty (kept for the whole match).
+var known: Dictionary = {}
+## Seats that claimed to be the Inspector (kept for the whole match).
+var inspector_claims: Array[int] = []
+var _said_inspect: Array[int] = []
+var _faked := false
 
 
 func _init(p_seat: int, seed_value: int) -> void:
@@ -46,7 +56,8 @@ func _others_alive(pub: Dictionary) -> Array[int]:
 
 
 func _sync(priv: Dictionary) -> void:
-	poisoner = priv.get("role", &"guest") == &"poisoner"
+	role = StringName(priv.get("role", &"guest"))
+	poisoner = role == &"poisoner"
 	partners = priv.get("partners", [])
 	if priv.has("evidence"):
 		evidence = priv["evidence"]
@@ -70,9 +81,18 @@ func choose_serve(priv: Dictionary, pub: Dictionary) -> Dictionary:
 		for o in others:
 			if not partners.has(o):
 				victims.append(o)
+		# Whoever claims to be the Inspector is the biggest danger.
+		var claimed: Array[int] = []
+		for c in inspector_claims:
+			if victims.has(c):
+				claimed.append(c)
+		if not claimed.is_empty() and rng.randf() < 0.7:
+			victims = claimed
 		var idx := hand.find(I.POISON)
-		# A careful poisoner now and then pours something harmless to keep a clean record.
-		if idx >= 0 and rng.randf() < 0.9 and not victims.is_empty():
+		# A careful poisoner now and then pours something harmless to keep a clean record (more
+		# often with an Inspector about: poison on your hands this round is proof).
+		var keen := 0.72 if bool(pub.get("roles_in_play", {}).get("inspector", false)) else 0.9
+		if idx >= 0 and rng.randf() < keen and not victims.is_empty():
 			return {"index": idx, "target": _pick(victims)}
 		return {"index": maxi(0, hand.find(I.SUGAR)), "target": _pick(others)}
 	var anti := hand.find(I.ANTIDOTE)
@@ -90,6 +110,37 @@ func choose_item(priv: Dictionary, pub: Dictionary) -> Dictionary:
 	var others := _others_alive(pub)
 	if items.is_empty() or others.is_empty():
 		return {}
+	var picked: Array = priv.get("picked", [])
+	# The role card first (it's played on top of a normal item).
+	for i in items.size():
+		if picked.has(i) or not Defs.is_role_card(int(items[i])):
+			continue
+		if int(items[i]) == IT.INSPECT:
+			var pool: Array[int] = []
+			for o in others:
+				if not known.get(o, false):
+					pool.append(o)
+			if pool.is_empty():
+				pool = others
+			var sc := _score(pub)
+			var best := _pick(pool)
+			for o in pool:
+				if float(sc.get(o, 0.0)) > float(sc.get(best, 0.0)) + 0.5:
+					best = o
+			return {"index": i, "targets": [best]}
+		if int(items[i]) == IT.PROTECT:
+			var last := int(priv.get("last_protect", -1))
+			if not bool(priv.get("self_protected", false)) and last != seat and rng.randf() < 0.25:
+				return {"index": i, "targets": [seat]}
+			var pool: Array[int] = []
+			for o in others:
+				if o != last:
+					pool.append(o)
+			if not pool.is_empty():
+				return {"index": i, "targets": [_pick(pool)]}
+	for i in picked:
+		if not Defs.is_role_card(int(items[int(i)])):
+			return {}
 	var idx := items.find(IT.SNIFF)
 	if idx >= 0 and not poisoner:
 		# Sniff your own cup most of the time: knowing it's poisoned lets you spill it at the toast.
@@ -120,6 +171,8 @@ func on_private_event(ev: Dictionary, _pub: Dictionary) -> void:
 			evidence.append({"kind": "sniff", "target": int(ev["target"]), "smell": String(ev["smell"])})
 		"watch_result":
 			evidence.append({"kind": "watch", "who": int(ev["who"]), "into": int(ev["into"])})
+		"inspect_result":
+			known[int(ev["who"])] = bool(ev["guilty"])
 
 
 ## Scared of its own cup (it sniffed poison, or just nervous)? Then it tries to cake it away.
@@ -144,6 +197,8 @@ func hear(claim: Dictionary) -> void:
 	var arr: Array = heard.get(by, [])
 	arr.append(claim)
 	heard[by] = arr
+	if StringName(claim.get("kind", "")) == &"inspect" and not inspector_claims.has(by):
+		inspector_claims.append(by)
 
 
 ## The next thing this bot says at the meeting, or {} when it has nothing (more) to say.
@@ -162,7 +217,32 @@ func next_claim(priv: Dictionary, pub: Dictionary) -> Dictionary:
 			"saw", "watch":
 				if my_saw.is_empty() or e["kind"] == "watch":
 					my_saw = e
+	# The Inspector calls out a poisoner as soon as they know one (and clears people later).
+	if role == &"inspector":
+		for o: int in known:
+			if known[o] and others.has(o) and not _said_inspect.has(o):
+				_said_inspect.append(o)
+				return {"kind": &"inspect", "a": o, "guilty": true}
+		if _claimed == 3:
+			for o: int in known:
+				if not known[o] and others.has(o) and not _said_inspect.has(o):
+					_said_inspect.append(o)
+					return {"kind": &"inspect", "a": o, "guilty": false}
+	# The Physician owns up when their smelling salts saved someone (it proves who they are).
+	if role == &"physician" and _claimed == 2:
+		for e: Dictionary in evidence:
+			if e.get("kind", "") == "protect" and poisoned.has(int(e["who"])) and (others.has(int(e["who"])) or int(e["who"]) == seat):
+				return {"kind": &"protect", "a": int(e["who"])}
 	if poisoner:
+		# Now and then: "I'm the Inspector, and X is the poisoner!" (a lie).
+		if _claimed == 2 and bool(pub.get("roles_in_play", {}).get("inspector", false)) and rng.randf() < 0.3 * aggression and not _faked:
+			var pool: Array[int] = []
+			for o in others:
+				if not partners.has(o) and not inspector_claims.has(o):
+					pool.append(o)
+			if not pool.is_empty():
+				_faked = true
+				return {"kind": &"inspect", "a": _pick(pool), "guilty": true}
 		match _claimed:
 			1:
 				# A fake alibi: "I poured sugar into <someone who didn't die>'s cup".
@@ -207,6 +287,10 @@ func next_claim(priv: Dictionary, pub: Dictionary) -> Dictionary:
 ## poisoner who drank their own poison blames someone on the way out.
 func last_words(priv: Dictionary, pub: Dictionary) -> Dictionary:
 	_sync(priv)
+	if role == &"inspector":
+		for o: int in known:
+			if known[o] and bool(pub.get("seats", [])[o]["alive"]):
+				return {"kind": &"inspect", "a": o, "guilty": true}
 	for e: Dictionary in evidence:
 		if String(e.get("kind", "")) in ["saw", "watch"] and int(e.get("into", -1)) >= 0 and not poisoner:
 			return {"kind": &"saw" if e["kind"] == "saw" else &"watch", "a": int(e["who"]), "b": int(e["into"])}
@@ -235,6 +319,24 @@ func _score(pub: Dictionary) -> Dictionary:
 			for c: Dictionary in heard.get(who, []):
 				if c.get("kind", "") == &"poured" and int(c["a"]) != int(e["into"]):
 					score[who] += 3.5
+	# What I know for certain as the Inspector.
+	for o: int in known:
+		if score.has(o):
+			score[o] += 12.0 if known[o] else -1.5   # clean hands this round prove little
+	# Inspector claims: strong, unless two guests claim the job (then one is lying).
+	var claimers := inspector_claims.filter(func(x: int) -> bool: return x != seat)
+	var trust := 2.5 if claimers.size() <= 1 and role != &"inspector" else 0.8
+	for by: int in heard:
+		for c: Dictionary in heard[by]:
+			if StringName(c.get("kind", "")) != &"inspect":
+				continue
+			var who := int(c["a"])
+			if role == &"inspector" and score.has(by):
+				score[by] += 6.0   # I'm the real Inspector: they're lying about being me
+			if known.has(who) and known[who] and not bool(c.get("guilty", false)) and score.has(by):
+				score[by] += 5.0   # caught lying about what they "found"
+			if score.has(who):
+				score[who] += trust if c.get("guilty", false) else -trust * 0.2
 	# What others claim (could be lies, so worth less).
 	for by: int in heard:
 		for c: Dictionary in heard[by]:

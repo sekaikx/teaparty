@@ -24,6 +24,8 @@ const I := Defs.Ingredient
 const IT := Defs.Item
 const POISONER := &"poisoner"
 const GUEST := &"guest"
+const INSPECTOR := &"inspector"
+const PHYSICIAN := &"physician"
 
 var rng := RandomNumberGenerator.new()
 var rules: Dictionary = Defs.default_rules()
@@ -39,6 +41,8 @@ var drinks: Array[Dictionary] = []
 var fallen_last: Array[int] = []
 ## seat -> target seat (or -1 = skip) for the current vote.
 var votes: Dictionary = {}
+## seat -> the Physician's seat, for guests watched over this round.
+var protected: Dictionary = {}
 
 
 func setup(players: Array, p_rules: Dictionary, seed_value: int) -> void:
@@ -61,20 +65,56 @@ func setup(players: Array, p_rules: Dictionary, seed_value: int) -> void:
 			"ejected": false, "evidence": [],
 			"kills": 0, "rounds_survived": 0, "sniffs": 0, "toasts": 0, "swaps": 0, "peeks": 0,
 			"rattles_used": 0, "good_votes": 0,
+			"inspects": 0, "revives": 0, "last_protect": -1, "self_protected": false,
 		})
 		cups[i] = {"id": i, "owner": i, "contents": [], "tea": false, "drunk": false}
 		cup_at.append(i)
 	# The secret poisoner(s).
 	var order: Array = range(seats.size())
 	_shuffle(order)
-	for n in mini(poisoner_count(seats.size()), seats.size()):
+	var np := mini(poisoner_count(seats.size()), seats.size())
+	for n in np:
 		seats[order[n]]["role"] = POISONER
+	# The special innocents, from the rest of the shuffled order.
+	var next := np
+	for r: StringName in [INSPECTOR, PHYSICIAN]:
+		if bool(rules.get(String(r), true)) and seats.size() >= int(Defs.ROLES[r]["min_players"]) and next < seats.size():
+			seats[order[next]]["role"] = r
+			next += 1
+
+
+## The role card a seat gets every round (-1 for none).
+func role_card(seat: int) -> int:
+	var r: StringName = seats[seat]["role"]
+	return int(Defs.ROLES.get(r, {}).get("card", -1))
+
+
+func has_role(r: StringName) -> bool:
+	for s in seats:
+		if s["role"] == r:
+			return true
+	return false
 
 
 ## Tuned in tools/test_rules.gd so the poisoner(s) win roughly 40-50% against bots: bigger
 ## tables give more time to catch one poisoner (fewer glimpses), but two poisoners need more.
 static func glimpse_for(players: int) -> float:
 	return {3: 0.7, 4: 0.6, 5: 0.5, 6: 0.4, 7: 0.33}.get(players, 0.75) as float
+
+
+## The Inspector and the Physician are strong evidence and protection for the guests, so with
+## them at the table the candles flicker more (fewer glimpses). Tuned in tools/test_rules.gd.
+func role_glimpse_k() -> float:
+	var k := 1.0
+	if has_role(INSPECTOR):
+		k *= IK
+	if has_role(PHYSICIAN):
+		k *= PK
+	return k
+
+
+static var IK := 0.6
+static var PK := 0.85
 
 
 static func poisoner_count(players: int) -> int:
@@ -138,6 +178,7 @@ func start_round() -> void:
 		s["voted"] = false
 		s["evidence"] = []
 		s["rattles"] = int(rules["ghost_rattles"]) if not s["alive"] else 0
+	protected.clear()
 	for seat in seats.size():
 		var cup: Dictionary = cups[cup_at[seat]]
 		cup["contents"] = []
@@ -174,6 +215,9 @@ func start_round() -> void:
 		seats[seat]["items"] = []
 		for n in int(rules["items_per_round"]):
 			_give_item(seats[seat])
+		var rc := role_card(seat)
+		if rc >= 0:
+			(seats[seat]["items"] as Array).push_front(rc)
 
 
 func _give_item(s: Dictionary) -> void:
@@ -255,7 +299,7 @@ func deal_sightings() -> Dictionary:
 	var alive := alive_seats()
 	var chance := float(rules.get("glimpse_chance", -1.0))
 	if chance < 0.0:
-		chance = glimpse_for(seats.size())
+		chance = glimpse_for(seats.size()) * role_glimpse_k()
 	for seat in alive:
 		if rng.randf() > chance:
 			(seats[seat]["evidence"] as Array).append({"kind": "dark"})
@@ -280,14 +324,17 @@ func deal_sightings() -> Dictionary:
 # Everybody picks an item and its targets during the same short window; then they all play out
 # in a fixed order: sniffs and watches first (information), then swaps (the cups move).
 
-const ITEM_ORDER := [Defs.Item.SNIFF, Defs.Item.PEEK, Defs.Item.SWAP, Defs.Item.TOAST]
+const ITEM_ORDER := [Defs.Item.PROTECT, Defs.Item.INSPECT, Defs.Item.SNIFF, Defs.Item.PEEK, Defs.Item.SWAP, Defs.Item.TOAST]
 
 ## seat -> {"index": item index, "item": item, "targets": Array} or {} for a pass.
 var picks: Dictionary = {}
+## The same for role cards (the Inspector and the Physician play theirs on top of an item).
+var role_picks: Dictionary = {}
 
 
 func begin_items() -> void:
 	picks.clear()
+	role_picks.clear()
 	for seat in alive_seats():
 		seats[seat]["item_done"] = (seats[seat]["items"] as Array).is_empty()
 		if seats[seat]["item_done"]:
@@ -305,8 +352,30 @@ func pass_turn(seat: int) -> bool:
 	if not is_alive(seat) or seats[seat]["item_done"]:
 		return false
 	seats[seat]["item_done"] = true
-	picks[seat] = {}
+	if not picks.has(seat):
+		picks[seat] = {}
 	return true
+
+
+## Done once the normal item and the role card (whichever the seat holds) are both picked.
+func _turn_complete(seat: int) -> bool:
+	var has_normal := false
+	var has_role := false
+	for k: int in seats[seat]["items"]:
+		if Defs.is_role_card(k):
+			has_role = true
+		else:
+			has_normal = true
+	return (picks.has(seat) or not has_normal) and (role_picks.has(seat) or not has_role)
+
+
+## Indices of the cards already locked in this items phase.
+func picked_indices(seat: int) -> Array:
+	var out: Array = []
+	for d: Dictionary in [picks.get(seat, {}), role_picks.get(seat, {})]:
+		if d.has("index"):
+			out.append(int(d["index"]))
+	return out
 
 
 ## Validates targets for an item (seat indices). Returns "" when fine, else the reason.
@@ -321,9 +390,14 @@ func item_error(seat: int, item: int, targets: Array) -> String:
 		IT.SWAP:
 			if targets[0] == targets[1]:
 				return "Pick two different cups."
-		IT.TOAST, IT.PEEK:
+		IT.TOAST, IT.PEEK, IT.INSPECT:
 			if targets[0] == seat:
 				return "Pick another guest."
+		IT.PROTECT:
+			if int(targets[0]) == int(seats[seat]["last_protect"]):
+				return "Not the same guest two rounds running."
+			if int(targets[0]) == seat and bool(seats[seat]["self_protected"]):
+				return "You've already watched over yourself once."
 	return ""
 
 
@@ -337,11 +411,14 @@ func choose_item(seat: int, item_index: int, targets: Array) -> String:
 	if item_index < 0 or item_index >= items.size():
 		return "No such item."
 	var item: int = items[item_index]
+	var role := Defs.is_role_card(item)
+	if (role_picks if role else picks).has(seat):
+		return "You've already picked that."
 	var err := item_error(seat, item, targets)
 	if err != "":
 		return err
-	picks[seat] = {"index": item_index, "item": item, "targets": targets.duplicate()}
-	seats[seat]["item_done"] = true
+	(role_picks if role else picks)[seat] = {"index": item_index, "item": item, "targets": targets.duplicate()}
+	seats[seat]["item_done"] = _turn_complete(seat)
 	return ""
 
 
@@ -357,10 +434,11 @@ func resolve_items() -> Array:
 		order.append(alive[(i + offset) % alive.size()])
 	for kind: int in ITEM_ORDER:
 		for seat in order:
-			var pk: Dictionary = picks.get(seat, {})
+			var pk: Dictionary = (role_picks if Defs.is_role_card(kind) else picks).get(seat, {})
 			if pk.is_empty() or int(pk["item"]) != kind:
 				continue
-			var step := {"seat": seat, "item": kind, "public": [], "private": []}
+			# Role cards are played in secret: nothing public, so nobody learns who holds them.
+			var step := {"seat": seat, "item": kind, "public": [], "private": [], "secret": Defs.is_role_card(kind)}
 			steps.append(step)
 			var targets: Array = pk["targets"]
 			_remove_item(seat, kind)
@@ -393,12 +471,29 @@ func resolve_items() -> Array:
 					(seats[seat]["evidence"] as Array).append({"kind": "watch", "who": t, "into": into})
 					step["public"].append({"type": "peek", "seat": seat, "target": t})
 					step["private"].append({"type": "watch_result", "who": t, "into": into})
+				IT.INSPECT:
+					var t: int = targets[0]
+					seats[seat]["inspects"] += 1
+					# Poison leaves a trace on the hands of whoever poured it THIS round: a poisoner
+					# who lies low for a round comes up clean.
+					var guilty := int(seats[t]["dropped"]) == I.POISON
+					(seats[seat]["evidence"] as Array).append({"kind": "inspect", "who": t, "guilty": guilty})
+					step["private"].append({"type": "inspect_result", "who": t, "guilty": guilty})
+				IT.PROTECT:
+					var t: int = targets[0]
+					protected[t] = seat
+					seats[seat]["last_protect"] = t
+					if t == seat:
+						seats[seat]["self_protected"] = true
+					(seats[seat]["evidence"] as Array).append({"kind": "protect", "who": t})
+					step["private"].append({"type": "protect_done", "who": t})
 				IT.TOAST:
 					var t: int = targets[0]
 					seats[seat]["toasts"] += 1
 					step["public"].append({"type": "toast", "seat": seat, "target": t})
 					step["public"].append(drink(t, true))
 	picks.clear()
+	role_picks.clear()
 	return steps
 
 
@@ -468,8 +563,14 @@ static func has_poison(contents: Array) -> bool:
 
 func _drink_event(seat: int, contents: Array, died: bool, toast: bool) -> Dictionary:
 	var cup: Dictionary = cups[cup_at[seat]]
+	# The Physician's smelling salts: a guest they watched over survives a deadly cup.
+	var revived := died and protected.has(seat)
+	if revived:
+		died = false
+		var doc := int(protected[seat])
+		seats[doc]["revives"] += 1
 	return {"type": "drink", "seat": seat, "cup": cup_at[seat], "contents": contents, "died": died, "toast": toast,
-		"saved": has_poison(contents) and not died, "spilled": bool(cup.get("spilled", false)),
+		"saved": has_poison(contents) and not died, "revived": revived, "spilled": bool(cup.get("spilled", false)),
 		"role": seats[seat]["role"], "blame": blame(contents, cup)}
 
 
@@ -482,7 +583,7 @@ func drink(seat: int, toast: bool = false) -> Dictionary:
 	var ev := _drink_event(seat, contents, died, toast)
 	cup["drunk"] = true
 	drinks.append(ev)
-	if died:
+	if ev["died"]:
 		_kill(seat, contents)
 	ev["moments"] = moments(ev)
 	return ev
@@ -524,6 +625,9 @@ func moments(ev: Dictionary) -> Array:
 	var out: Array = []
 	var seat := int(ev["seat"])
 	var nm: String = seats[seat]["name"]
+	if ev.get("revived", false):
+		out.append({"title": "SMELLING SALTS!", "sub": "%s drank POISON... and the Physician brought them round!" % nm})
+		return out
 	if ev.get("saved", false) and not ev.get("died", false):
 		out.append({"title": "ANTIDOTE SAVE!", "sub": "%s's cup was POISONED... and someone slipped in the antidote" % nm})
 		return out
@@ -561,7 +665,7 @@ func reveal() -> Array:
 			kinds.append(c["k"])
 		kinds.sort()
 		out.append({"seat": d["seat"], "kinds": kinds, "died": d["died"], "saved": d.get("saved", false),
-			"toast": d["toast"], "role": d["role"] if d["died"] else &""})
+			"revived": d.get("revived", false), "toast": d["toast"], "role": d["role"] if d["died"] else &""})
 	return out
 
 
@@ -680,7 +784,8 @@ func public_state() -> Dictionary:
 		# No content count: how many pours went into a cup is secret too.
 		cs.append({"id": c["id"], "owner": c["owner"], "tea": c["tea"], "drunk": c["drunk"],
 			"spilled": bool(c.get("spilled", false))})
-	return {"round": round_no, "laced": false, "seats": ps, "cups": cs, "poisoners": poisoner_count(seats.size())}
+	return {"round": round_no, "laced": false, "seats": ps, "cups": cs, "poisoners": poisoner_count(seats.size()),
+		"roles_in_play": {"inspector": has_role(INSPECTOR), "physician": has_role(PHYSICIAN)}}
 
 
 ## What one seat may see on top of the public state.
@@ -697,5 +802,6 @@ func private_state(seat: int) -> Dictionary:
 		"seat": seat, "hand": (s["hand"] as Array).duplicate(), "items": (s["items"] as Array).duplicate(),
 		"dropped": s["dropped"], "role": s["role"], "team": -1, "partners": partners,
 		"target": int(s["served"]), "evidence": (s["evidence"] as Array).duplicate(true),
-		"spike": false,
+		"spike": false, "picked": picked_indices(seat),
+		"last_protect": int(s["last_protect"]), "self_protected": bool(s["self_protected"]),
 	}

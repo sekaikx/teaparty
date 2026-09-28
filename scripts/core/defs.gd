@@ -3,7 +3,7 @@ extends RefCounted
 ## Shared constants: ingredients, items, phases, modes, rooms, emotes and default lobby rules.
 
 enum Ingredient { NOTHING, POISON, ANTIDOTE, SUGAR }
-enum Item { SWAP, SNIFF, TOAST, PEEK }
+enum Item { SWAP, SNIFF, TOAST, PEEK, INSPECT, PROTECT }
 ## Round order: DEAL > POUR (serve in the dark) > ITEMS > DRINK (the toast) > REVEAL > TALK (the
 ## meeting) > VOTE > EJECT. New phases are appended so the numbers of the old ones never change.
 enum Phase { LOBBY, INTRO, DEAL, POUR, ITEMS, TALK, DRINK, REVEAL, MATCH_END, VOTE, EJECT }
@@ -28,6 +28,22 @@ const ITEMS := {
 		"desc": "Raise a toast to a guest: they must drink their cup right now (after the swaps)."},
 	Item.PEEK: {"name": "Watch", "targets": 1, "target": &"guest",
 		"desc": "Watch a guest: you alone learn whose cup they poured into. Catch a liar."},
+	# Role cards: dealt every round to the Inspector and the Physician, on top of their normal
+	# item, and played in secret (nobody sees who used them).
+	Item.INSPECT: {"name": "Inspect", "targets": 1, "target": &"guest", "role": true,
+		"desc": "INSPECTOR: examine a guest's hands. Poison leaves a trace on whoever poured it THIS round."},
+	Item.PROTECT: {"name": "Watch Over", "targets": 1, "target": &"guest", "role": true,
+		"desc": "PHYSICIAN: keep your smelling salts ready for a guest. If they're poisoned this round, you bring them round."},
+}
+
+## The special innocent roles, like Mafia's detective and doctor (but at a tea party).
+const ROLES := {
+	&"guest": {"name": "Guest", "desc": "An innocent guest."},
+	&"poisoner": {"name": "Poisoner", "desc": "The murderer."},
+	&"inspector": {"name": "The Inspector", "card": Item.INSPECT, "min_players": 5,
+		"desc": "A detective in a deerstalker. Each round, INSPECT one guest's hands: poison leaves a trace on whoever poured it this round. Share it at the meeting... but the poisoner can claim to be you."},
+	&"physician": {"name": "The Physician", "card": Item.PROTECT, "min_players": 6,
+		"desc": "The family doctor. Each round, WATCH OVER one guest: if they drink poison, your smelling salts bring them round. Not the same guest twice in a row; yourself only once."},
 }
 
 const PHASE_NAMES := {
@@ -76,6 +92,9 @@ const DEFAULT_RULES := {
 	"helium": false,
 	"night": false,
 	"items_enabled": [Item.SWAP, Item.SNIFF, Item.PEEK],
+	## Special innocent roles (dealt when the table is big enough, see ROLES).
+	"inspector": true,
+	"physician": true,
 }
 
 ## Emote wheel: label, speech bubble line, gesture (Guest.gesture) and a voice blip.
@@ -106,6 +125,8 @@ const CLAIMS := {
 	&"watch": "I watched %s: they poured into %s's cup!",
 	&"sus": "It's %s! Vote %s!",
 	&"clear": "%s is innocent, I'd bet on it.",
+	&"inspect": "I'm the INSPECTOR: %s had %s hands!",
+	&"protect": "I'm the PHYSICIAN: I watched over %s.",
 }
 
 
@@ -126,11 +147,23 @@ static func claim_text(c: Dictionary, nm: Callable) -> String:
 			return "It's %s! Vote %s!" % [nm.call(int(c["a"])), nm.call(int(c["a"]))]
 		&"clear":
 			return "%s is innocent, I'd bet on it." % nm.call(int(c["a"]))
+		&"inspect":
+			return "I'm the INSPECTOR: %s %s" % [nm.call(int(c["a"])), "had POISON on their hands!" if c.get("guilty", false) else "had clean hands this round."]
+		&"protect":
+			return "I'm the PHYSICIAN: I watched over %s." % nm.call(int(c["a"]))
 	return "..."
 
 
 static func ingredient_name(k: int) -> String:
 	return INGREDIENTS[k]["name"] if INGREDIENTS.has(k) else "?"
+
+
+static func role_name(r: StringName) -> String:
+	return String(ROLES.get(r, {}).get("name", "Guest"))
+
+
+static func is_role_card(k: int) -> bool:
+	return bool(ITEMS.get(k, {}).get("role", false))
 
 
 static func item_name(k: int) -> String:

@@ -36,8 +36,11 @@ func show_result(res: Dictionary, my_seat: int) -> void:
 		var h := Ui.hbox(10)
 		row.add_child(h)
 		var extra := ""
-		if StringName(s.get("role", &"guest")) == &"poisoner":
+		var rl := StringName(s.get("role", &"guest"))
+		if rl == &"poisoner":
 			extra = "  (THE POISONER)"
+		elif rl in [&"inspector", &"physician"]:
+			extra = "  (%s)" % Defs.role_name(rl).to_upper()
 		var nm := Ui.label(("WINNER  " if winners.has(i) else "") + String(s["name"]) + extra + ("  - you" if i == my_seat else ""), 16, Ui.INK, 700)
 		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		h.add_child(nm)

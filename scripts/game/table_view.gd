@@ -461,8 +461,13 @@ func _valid_target(seat: int) -> bool:
 	var item := targeting_item()
 	if item < 0:
 		return false
-	if item in [Defs.Item.TOAST, Defs.Item.PEEK] and seat == my_seat:
+	if item in [Defs.Item.TOAST, Defs.Item.PEEK, Defs.Item.INSPECT] and seat == my_seat:
 		return false
+	if item == Defs.Item.PROTECT:
+		if seat == int(Session.private.get("last_protect", -1)):
+			return false
+		if seat == my_seat and bool(Session.private.get("self_protected", false)):
+			return false
 	return not targets.has(seat)
 
 

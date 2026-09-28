@@ -1,7 +1,8 @@
 extends Node
-## Renders the app icon (the .exe / window / Steam icon) and the boot splash from the real game
+## Renders the app icon (the .exe / window / Steam icon) from the real game
 ## character: a sly jelly bean in a top hat raising a cup of suspicious tea, on a rounded plum
-## tile with an ink outline. Writes assets/icons/icon_*.png, icon.ico (PNG entries) and splash.png.
+## tile with an ink outline. Writes assets/icons/icon_*.png and icon.ico (PNG entries).
+## (The boot splash / loading screen art comes from tools/key_art.gd.)
 ##   xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/app_icon.gd
 const OUT := "res://assets/icons/"
 const SIZE := 1024
@@ -84,7 +85,6 @@ func _run() -> void:
 		im.save_png(ProjectSettings.globalize_path(OUT + "icon_%d.png" % s))
 		pngs.append(im.save_png_to_buffer())
 	_write_ico(ProjectSettings.globalize_path(OUT + "icon.ico"), pngs, [16, 24, 32, 48, 64, 128, 256])
-	_splash(tile).save_png(ProjectSettings.globalize_path(OUT + "splash.png"))
 	print("APPICON OK")
 	get_tree().quit()
 
@@ -130,16 +130,6 @@ func _round_rect_sdf(p: Vector2, r: float) -> float:
 	var h := SIZE * 0.5 - 6.0
 	var q := (p - Vector2(SIZE, SIZE) * 0.5).abs() - Vector2(h - r, h - r)
 	return Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length() + minf(maxf(q.x, q.y), 0.0) - r
-
-
-## Boot splash: the icon, centred on the splash background colour.
-func _splash(tile: Image) -> Image:
-	var s := Image.create(640, 640, false, Image.FORMAT_RGBA8)
-	s.fill(Color(0, 0, 0, 0))
-	var t := tile.duplicate() as Image
-	t.resize(420, 420, Image.INTERPOLATE_LANCZOS)
-	s.blend_rect(t, Rect2i(0, 0, 420, 420), Vector2i(110, 110))
-	return s
 
 
 ## A Windows .ico whose entries are PNGs (supported since Vista; Godot's exporter reads it).

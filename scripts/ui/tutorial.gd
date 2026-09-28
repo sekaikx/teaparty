@@ -21,6 +21,9 @@ const PAGES := [
 	{"title": "5. THE MEETING + THE VOTE", "color": Color("3ddc97"),
 		"icons": [["key", "V"], ["arrow"], ["ghost"]],
 		"text": "Now talk (Discord, or hold V). \"Where did YOU pour?\" \"I saw Clara pour into Ada's cup!\" \"No, I poured sugar into Baron's!\" Someone is lying (the WHO SAID WHAT board flags stories that don't add up). The poisoned get one line of last words. Then vote: most votes gets thrown out."},
+	{"title": "6. THE INSPECTOR AND THE PHYSICIAN", "color": Color("ffb400"),
+		"icons": [["item", Defs.Item.INSPECT], ["ghost"], ["item", Defs.Item.PROTECT]],
+		"text": "With 5+ guests one innocent is secretly the INSPECTOR: each round they inspect a guest's hands, and poison leaves a trace on whoever poured it THIS round. With 6+ there's also a PHYSICIAN, who watches over a guest: if that guest drinks poison, smelling salts bring them round. Both play in secret, on top of their item. The poisoner can pretend to be either..."},
 ]
 
 var _page := 0

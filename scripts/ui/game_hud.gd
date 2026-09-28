@@ -251,12 +251,45 @@ func _build_bottom() -> void:
 	_keys.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_keys)
 	Ui.pin(_keys, Vector2(0.5, 1), Vector2(0.5, 1), Vector2(0, -14))
-	_keys.add_child(_key_chip(Keys.label(&"push_to_talk"), "TALK"))
+	_talk_chip = _key_chip(Keys.label(&"push_to_talk"), "TALK")
+	_talk_label = _talk_chip.get_meta(&"label")
+	_keys.add_child(_talk_chip)
 	_keys.add_child(_key_chip(Keys.label(&"emote_wheel"), "EMOTES"))
 	var cake := _key_chip(Keys.label(&"throw_cake"), "THROW CAKE")
 	_cake_label = cake.get_meta(&"label")
 	_keys.add_child(cake)
 	_keys.add_child(_key_chip("RMB", "LOOK"))
+
+
+var _talk_chip: PanelContainer
+var _talk_label: Label
+
+
+## The TALK chip lights up with your live mic level while you hold the key, and warns when the
+## microphone is giving nothing but silence.
+func _mic_hint() -> void:
+	if _talk_chip == null:
+		return
+	if Net.is_solo:
+		_talk_label.text = "TALK (online)"
+		return
+	if not bool(Profile.settings.get("mic", true)):
+		_talk_label.text = "MIC OFF (Settings)"
+	elif Voice.mic_error != "":
+		_talk_label.text = "NO MIC"
+	elif Voice.transmitting:
+		if Voice.seems_silent():
+			_talk_label.text = "MIC SILENT? (Settings > TEST MIC)"
+		else:
+			var bars := int(clampf(sqrt(Voice.level) * 5.0, 0.0, 5.0))
+			_talk_label.text = "TALKING " + "|".repeat(bars) + ".".repeat(5 - bars)
+	else:
+		_talk_label.text = "TALK"
+	var col := Ui.MINT if Voice.transmitting and not Voice.seems_silent() else (Ui.PINK if Voice.transmitting else Color(Ui.PLUM_DARK, 0.85))
+	if _talk_chip.get_meta(&"col", Color.BLACK) != col:
+		_talk_chip.set_meta(&"col", col)
+		_talk_chip.add_theme_stylebox_override("panel", Ui.box(col, 14, 3, 3, Ui.INK, Vector4(6, 4, 12, 6)))
+		_talk_label.add_theme_color_override("font_color", Ui.INK if Voice.transmitting else Ui.CREAM)
 
 
 func _key_chip(key: String, what: String) -> PanelContainer:
@@ -348,6 +381,7 @@ func _build_pause() -> void:
 
 func _process(delta: float) -> void:
 	_watch_fps(delta)
+	_mic_hint()
 	var total := maxf(Session.phase_total, 0.01)
 	_pie.fraction = clampf(Session.phase_left / total, 0.0, 1.0) if Session.phase in TIMED else 0.0
 	_pie.seconds = ceili(Session.phase_left) if Session.phase in TIMED else 0
@@ -596,7 +630,8 @@ func _refresh_tray() -> void:
 func _refresh_items() -> void:
 	var items: Array = Session.private.get("items", [])
 	var my_turn := Session.is_my_turn()
-	var sig := "%s|%s|%d" % [str(items), my_turn, table.targeting]
+	var picked: Array = Session.private.get("picked", []) if Session.phase == P.ITEMS else []
+	var sig := "%s|%s|%d|%s" % [str(items), my_turn, table.targeting, str(picked)]
 	if sig == _items_sig:
 		return
 	_items_sig = sig
@@ -604,7 +639,10 @@ func _refresh_items() -> void:
 		c.queue_free()
 	for i in items.size():
 		var card := TrayCard.new().setup(i, int(items[i]), true)
-		card.enabled = my_turn
+		card.enabled = my_turn and not picked.has(i)
+		if picked.has(i):
+			card.modulate = Color(1, 1, 1, 0.45)
+			card.tooltip_text = "Locked in for this round."
 		card.clicked.connect(func(c: TrayCard) -> void:
 			if table.targeting == c.index:
 				table.cancel_targeting()
@@ -676,6 +714,13 @@ func _coach_text_for() -> Array:
 					var picked := table.targets.size()
 					return ["%s: CLICK %s" % [Defs.item_name(item).to_upper(), ("%d %s (%d/%d)" % [need, what, picked, need]) if need > 1 else "A " + what],
 						String(Defs.ITEMS[item]["desc"]) + "  Right-click to cancel.", Ui.SKY]
+				var mine: Array = Session.private.get("items", [])
+				var done: Array = Session.private.get("picked", [])
+				for i in mine.size():
+					if Defs.is_role_card(int(mine[i])) and not done.has(i):
+						if int(mine[i]) == Defs.Item.INSPECT:
+							return ["INSPECTOR: INSPECT A GUEST (secret)", "Click INSPECT, then a guest. Poison leaves a trace on whoever poured it this round. Nobody sees you do it.", Ui.YELLOW]
+						return ["PHYSICIAN: WATCH OVER A GUEST (secret)", "Click WATCH OVER, then a guest. If they drink poison, your smelling salts save them.", Ui.MINT]
 				return ["USE AN ITEM (everyone picks at once)", "SNIFF a cup, WATCH where a guest poured, or SWAP two cups. Or PASS.", Ui.SKY]
 			return ["LOCKED IN: %s" % _my_lock if _my_lock != "" else "LOCKED IN", "Waiting for the others...", Ui.MINT]
 		P.DRINK:
@@ -713,6 +758,10 @@ func _evidence_lines() -> Array[String]:
 				out.append("You sniffed %s's cup: %s." % [nm.call(e["target"]), {"poison": "POISON", "clean": "clean", "sweet": "too sweet to tell"}.get(String(e["smell"]), "?")])
 			"watch":
 				out.append("You WATCHED %s: they poured into %s's cup." % [nm.call(e["who"]), nm.call(e["into"])])
+			"inspect":
+				out.append("You INSPECTED %s: %s" % [nm.call(e["who"]), "POISON ON THEIR HANDS!" if e.get("guilty", false) else "clean hands this round."])
+			"protect":
+				out.append("You're watching over %s with your smelling salts." % nm.call(e["who"]))
 	var partners: Array = Session.private.get("partners", [])
 	if not partners.is_empty():
 		var names: Array[String] = []
@@ -750,6 +799,18 @@ func _show_role() -> void:
 	var head := "YOU'RE AN INNOCENT GUEST"
 	var body := "%s at this table is a secret POISONER. Each round everyone serves a cup in the dark. Remember what you glimpse, catch the liar at the meeting, and vote them out." % ("Someone" if n == 1 else "Two guests")
 	var col := Ui.MINT
+	var extras: Array[String] = []
+	var rip: Dictionary = Session.public.get("roles_in_play", {})
+	if rip.get("inspector", false):
+		extras.append("an INSPECTOR")
+	if rip.get("physician", false):
+		extras.append("a PHYSICIAN")
+	if role == &"inspector" or role == &"physician":
+		head = "YOU ARE %s" % Defs.role_name(role).to_upper()
+		body = String(Defs.ROLES[role]["desc"]) + " You're innocent: help the guests find the poisoner."
+		col = Ui.YELLOW if role == &"inspector" else Ui.MINT
+	elif not extras.is_empty():
+		body += " Somewhere among the guests: %s." % " and ".join(extras)
 	if role == &"poisoner":
 		head = "YOU ARE THE POISONER"
 		body = "Nobody knows. Each round, pour poison into someone's cup in the dark. At the meeting, lie about where you poured. Win when there are as many poisoners as guests left."
@@ -759,6 +820,8 @@ func _show_role() -> void:
 			for p: int in partners:
 				names.append(Session.seat_name(p))
 			body += " Your partner in crime: %s." % ", ".join(names)
+		if not extras.is_empty():
+			body += " Beware: %s is hiding among the guests." % " and ".join(extras)
 		col = Ui.PINK
 	var p := Ui.panel()
 	var v := Ui.vbox(8)
@@ -804,7 +867,8 @@ func _build_meeting() -> void:
 	v.add_child(row)
 	row.add_child(Ui.label("SAY:", 16, Ui.YELLOW, 800))
 	_claim_kind = OptionButton.new()
-	for k: String in ["I poured into...", "I saw ... pour into...", "It's ...!", "... is innocent"]:
+	for k: String in ["I poured into...", "I saw ... pour into...", "It's ...!", "... is innocent",
+			"I'm the Inspector: POISON on ...", "I'm the Inspector: ... is clean", "I'm the Physician: I watched over ..."]:
 		_claim_kind.add_item(k)
 	_claim_kind.item_selected.connect(func(_i: int) -> void: _claim_layout())
 	row.add_child(_claim_kind)
@@ -861,6 +925,12 @@ func _say_custom() -> void:
 			Session.request_claim({"kind": &"sus", "a": a})
 		3:
 			Session.request_claim({"kind": &"clear", "a": a})
+		4:
+			Session.request_claim({"kind": &"inspect", "a": a, "guilty": true})
+		5:
+			Session.request_claim({"kind": &"inspect", "a": a, "guilty": false})
+		6:
+			Session.request_claim({"kind": &"protect", "a": a})
 	Sfx.play(&"pop", -6.0)
 
 
@@ -877,6 +947,10 @@ func _truth_claims() -> Array:
 				out.append({"kind": &"watch", "a": int(e["who"]), "b": int(e["into"])})
 			"sniff":
 				out.append({"kind": &"sniff", "a": int(e["target"]), "smell": String(e["smell"])})
+			"inspect":
+				out.append({"kind": &"inspect", "a": int(e["who"]), "guilty": bool(e.get("guilty", false))})
+			"protect":
+				out.append({"kind": &"protect", "a": int(e["who"])})
 	return out
 
 
@@ -927,7 +1001,18 @@ func _contradictions() -> Array[String]:
 					out.append("%s says %s went into %s's cup, but there was no %s in it." % [nm.call(s), Defs.ingredient_name(k).to_upper(), nm.call(cup), Defs.ingredient_name(k).to_lower()])
 		if into.size() > harmless:
 			out.append("%d guests say they poured into %s's cup, but only %d harmless drink%s went in." % [into.size(), nm.call(cup), harmless, "" if harmless == 1 else "s"])
-	# 2. A sighting against someone's own story.
+	# 2. Two guests claiming the same special role: one of them is the poisoner (or fibbing).
+	for kind: StringName in [&"inspect", &"protect"]:
+		var who_claims: Array[int] = []
+		for c: Dictionary in _said:
+			if StringName(c["kind"]) == kind and not who_claims.has(int(c["seat"])):
+				who_claims.append(int(c["seat"]))
+		if who_claims.size() > 1:
+			var names: Array[String] = []
+			for w in who_claims:
+				names.append(nm.call(w))
+			out.append("%s all claim to be the %s. There's only one!" % [" and ".join(names), "Inspector" if kind == &"inspect" else "Physician"])
+	# 3. A sighting against someone's own story.
 	for c: Dictionary in _said:
 		if StringName(c["kind"]) in [&"saw", &"watch"]:
 			var who := int(c["a"])
@@ -1020,6 +1105,15 @@ func _on_event(ev: Dictionary) -> void:
 			Sfx.play(&"secret", -4.0)
 		"lights_on":
 			_set_dark(false)
+		"inspect_result":
+			var guilty := bool(ev["guilty"])
+			_note_show([Ui.title("YOU INSPECT %s'S HANDS..." % String(name_of.call(ev["who"])).to_upper(), 26, Ui.INK),
+				Ui.title("POISON!" if guilty else "CLEAN", 48, Color("4f9e1f") if guilty else Color("1f7a4d")),
+				Ui.wrap(Ui.label("Traces of poison: %s poured it this round. Tell the table... if they'll believe you." % name_of.call(ev["who"]) if guilty
+					else "No trace this round. (A poisoner who lies low comes up clean.)", 17, Ui.INK), 380)], 6.0)
+			Sfx.play(&"secret", -4.0)
+		"protect_done":
+			_log("Your smelling salts are ready for %s" % name_of.call(ev["who"]), Ui.MINT)
 		"watch_result":
 			_note_show([Ui.title("YOU WATCHED %s..." % String(name_of.call(ev["who"])).to_upper(), 28, Ui.INK),
 				Ui.wrap(Ui.label("They poured into %s's cup." % name_of.call(ev["into"]), 22, Ui.INK, 800), 380),
@@ -1248,7 +1342,7 @@ func _show_reveal(list: Array) -> void:
 		var h := Ui.hbox(8)
 		row.add_child(h)
 		var role := StringName(r.get("role", &""))
-		var nm := Ui.label(Session.seat_name(int(r["seat"])) + (" (the POISONER!)" if role == &"poisoner" else ""), 17, Ui.INK, 700)
+		var nm := Ui.label(Session.seat_name(int(r["seat"])) + (" (the POISONER!)" if role == &"poisoner" else (" (%s)" % Defs.role_name(role) if role in [&"inspector", &"physician"] else "")), 17, Ui.INK, 700)
 		nm.custom_minimum_size.x = 150
 		h.add_child(nm)
 		var icons := Ui.hbox(2)
@@ -1256,7 +1350,7 @@ func _show_reveal(list: Array) -> void:
 		for k: int in r["kinds"]:
 			icons.add_child(TeaIcon.make(TeaIcon.Kind.INGREDIENT, k, 32))
 		h.add_child(icons)
-		h.add_child(Ui.label("DEAD" if r["died"] else "SAVED", 16, Color("c0184a") if r["died"] else Color("1f7a4d"), 700))
+		h.add_child(Ui.label("DEAD" if r["died"] else ("REVIVED" if r.get("revived", false) else "SAVED"), 16, Color("c0184a") if r["died"] else Color("1f7a4d"), 700))
 		_reveal_rows.add_child(row)
 	_reveal_rows.add_child(Ui.wrap(Ui.label("Everyone who poured into these cups knows they did. Somebody poured the poison.", 14, Ui.MUTED, 700), 340))
 	_reveal.visible = true

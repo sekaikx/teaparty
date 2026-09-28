@@ -191,6 +191,9 @@ func _apply_settings() -> void:
 		_apply_window(bool(settings.get("fullscreen", true)))
 	_apply_quality()
 	Engine.max_fps = int(settings.get("max_fps", 0))
+	var dev := String(settings.get("mic_device", ""))
+	if dev != "" and AudioServer.get_input_device_list().has(dev) and AudioServer.input_device != dev:
+		AudioServer.input_device = dev
 
 
 ## Fullscreen (borderless, the desktop resolution) or a big centred window.

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://domerhwsmcpxs"
-path="res://.godot/imported/splash.png-cfbc5d87f90595a3b8a25d082da8fc38.ctex"
+uid="uid://cgmh8jtuohpey"
+path="res://.godot/imported/first-aid-fill.svg-80240291e6c8752fa2b8ee01d17e96db.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/icons/splash.png"
-dest_files=["res://.godot/imported/splash.png-cfbc5d87f90595a3b8a25d082da8fc38.ctex"]
+source_file="res://assets/icons/src/first-aid-fill.svg"
+dest_files=["res://.godot/imported/first-aid-fill.svg-80240291e6c8752fa2b8ee01d17e96db.ctex"]
 
 [params]
 
@@ -38,3 +38,6 @@ process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
 detect_3d/compress_to=1
+svg/scale=1.0
+editor/scale_with_editor_scale=false
+editor/convert_colors_with_editor_theme=false

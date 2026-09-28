@@ -121,6 +121,13 @@ func cup_of(seat: int) -> Dictionary:
 func host_start(players: Array, p_rules: Dictionary) -> void:
 	_rules = TeaRules.new()
 	_rules.setup(players, p_rules, _rng.randi())
+	# QA only (tools/qa_driver.gd --role=...): hand the host's own seat a given role.
+	if debug_role != &"":
+		var me := _rules.seat_of_id(_local_id())
+		for i in _rules.seats.size():
+			if _rules.seats[i]["role"] == debug_role and me >= 0 and i != me:
+				_rules.seats[i]["role"] = _rules.seats[me]["role"]
+				_rules.seats[me]["role"] = debug_role
 	_bots.clear()
 	_bot_wait.clear()
 	_bot_chatter.clear()
@@ -288,7 +295,8 @@ func _public_drinks(drinks: Array) -> Array:
 	var out: Array = []
 	for d: Dictionary in drinks:
 		out.append({"type": "drink", "seat": d["seat"], "cup": d["cup"], "died": d["died"], "toast": d["toast"],
-			"saved": d.get("saved", false), "spilled": d.get("spilled", false), "role": d["role"] if d["died"] else &""})
+			"saved": d.get("saved", false), "revived": d.get("revived", false), "spilled": d.get("spilled", false),
+			"role": d["role"] if d["died"] else &""})
 	return out
 
 
@@ -333,8 +341,18 @@ func _begin_items() -> void:
 
 
 ## Everyone has picked (or the clock ran out): play the items out one by one.
+var debug_role: StringName = &""
+
+
 func _resolve_items() -> void:
 	_steps = _rules.resolve_items()
+	# Role cards (Inspect, Watch Over) play out in secret and at once: no public step and no
+	# pause that could give away who holds them.
+	for step: Dictionary in _steps.duplicate():
+		if step.get("secret", false):
+			for ev: Dictionary in step["private"]:
+				_emit_private(int(step["seat"]), ev)
+			_steps.erase(step)
 	if _steps.is_empty():
 		_after_items()
 		return
@@ -370,11 +388,16 @@ func _talking_points() -> Array:
 	var lines: Array = []
 	var dead: Array[String] = []
 	var saved: Array[String] = []
+	var revived: Array[String] = []
 	for r: Dictionary in _last_reveal:
 		if r["died"]:
 			dead.append(_nm(r["seat"]))
+		elif r.get("revived", false):
+			revived.append(_nm(r["seat"]))
 		elif r.get("saved", false):
 			saved.append(_nm(r["seat"]))
+	if not revived.is_empty():
+		lines.append("%s drank POISON, but the Physician brought them round. Who poured into their cup?" % revived[0])
 	if not dead.is_empty():
 		lines.append("%s was poisoned. Everyone: say whose cup YOU poured into." % " and ".join(dead))
 		lines.append("Who saw someone pour into %s's cup? Say it. (Or lie.)" % dead[0])
@@ -816,7 +839,7 @@ func _do_claim(s: int, claim: Dictionary) -> void:
 	if not Defs.CLAIMS.has(kind):
 		return
 	var c := {"type": "claim", "seat": s, "kind": kind, "a": int(claim.get("a", -1)), "b": int(claim.get("b", -1)),
-		"k": int(claim.get("k", -1)), "smell": String(claim.get("smell", "clean"))}
+		"k": int(claim.get("k", -1)), "smell": String(claim.get("smell", "clean")), "guilty": bool(claim.get("guilty", false))}
 	if c["a"] < 0 or c["a"] >= _rules.seat_count() or (kind in [&"saw", &"watch"] and (c["b"] < 0 or c["b"] >= _rules.seat_count())):
 		return
 	var now := Time.get_ticks_msec() / 1000.0
@@ -942,6 +965,9 @@ func _tick_bots(dt: float) -> void:
 						_push(_timer)
 					else:
 						_do_item(s, choice["index"], choice["targets"])
+						# The Inspector / Physician still has their other card to play.
+						if not _rules.seats[s]["item_done"]:
+							_bot_wait[s] = _rng.randf_range(0.8, 2.5)
 			P.TALK:
 				if _rules.is_alive(s):
 					_do_ready(s)

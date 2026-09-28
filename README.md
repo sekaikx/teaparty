@@ -30,6 +30,7 @@ Poisoners win when there are as many poisoners as guests left.
 | **2 ITEMS** | Everyone picks at once: **Sniff** a cup (is it poisoned right now? sugar hides it), **Watch** a guest (you learn whose cup they poured into), **Swap** two cups (everyone sees it). Or pass. |
 | **3 TOAST** | Everyone raises their cup for 5 seconds. Think yours is poisoned? Press **F** to throw a cake at it and it spills. Hit a face and they drop their cup. Then everyone drinks. The poisoned fall, and **the game doesn't say who poured it**. You only see what was in the deadly cup. |
 | **4 MEETING** | Talk (Discord, or hold **V**). Say where you poured and what you saw. Players without voice use the **SAY** bar (quick buttons for the truth, or build a lie). Whoever was just poisoned gets **one line of last words** before going silent. The **WHO SAID WHAT** board lists every claim and flags stories that **don't add up** (someone says they poured sugar into the victim's cup but the reveal shows no sugar; three people claim the same cup; a sighting contradicts an alibi). Press **READY TO VOTE**. |
+| **Special roles** | With 5+ guests one innocent is secretly **the Inspector** (our detective): each round they **inspect** a guest's hands, and poison leaves a trace on whoever poured it *that round* (a poisoner who lies low comes up clean). With 6+ there's also **the Physician** (our doctor): each round they **watch over** a guest, and if that guest drinks poison, smelling salts bring them round (not the same guest two rounds running, themselves only once). Both play in secret on top of their item, and anyone (the poisoner too) can claim to be them. Two claims for one role show up on the board. Lobby toggles switch them off. |
 | **5 VOTE** | Click who you think it is, or **SKIP**. Most votes gets **thrown out** (ragdoll-yeeted), and everyone sees if they were the poisoner. A tie, or most skipping, throws nobody out. |
 
 ### A round on a Discord call (6 friends: Ada, Baron, Clara, Dev, Eli, Finn; Finn is the poisoner)
@@ -152,6 +153,14 @@ Not on Steam? **SAME WI-FI / DIRECT IP** still works (UDP port 24565).
   fire go down, the table candles puff out in a wisp of smoke, and you pour by your own little
   candle. The other guests become silhouettes with glowing eyes, and every cup rim glints so you can
   still pick one. A slow heartbeat plays until the lamps stutter back on.
+- **Voice that just works.** Hold **V**: the mic is kept open for the whole session, so the
+  first word isn't cut off, and the TALK chip shows your live level (or warns *MIC SILENT?*).
+  **Settings > TEST MIC** has a level bar, a device picker and *hear myself*.
+  `tools/mic_test.gd` checks it end to end: a virtual microphone playing a 440 Hz tone, a host
+  and a client over the network, and the host decoding exactly that tone.
+- **A real loading screen.** The boot splash and the loading screen are key art rendered from the
+  game (`tools/key_art.gd`). The room models load on a background thread behind a progress bar
+  and a gameplay tip, and the screen stays up until the first frames are smooth.
 - **Text chat for players without a mic.** Press **Enter** (or **T**) online to type up to 140
   characters. Lines show in the chat box and as a speech bubble over your bean. Ghosts chat only with
   other ghosts, so the dead can't tip anyone off.
@@ -213,6 +222,9 @@ xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --solo --shots=/tm
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/bean_test.gd    # guests, cakes, ragdolls, ghosts
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/char_closeup.gd # studio renders + knockdown/recover
 godot --headless --path . -- --qa --tool=res://tools/ragdoll_test.gd    # knockdowns + every death style: no launches, jitter or falling through
+godot --headless --path . -- --qa --solo --role=inspector --speed=8     # play a match as the Inspector (or physician)
+xvfb-run -a godot --path . -- --qa --tool=res://tools/mic_test.gd --mic-host   # + --mic-join: voice end to end (see the file)
+xvfb-run -a -s "-screen 0 1920x1080x24" godot --rendering-driver vulkan --path . -- --qa --tool=res://tools/key_art.gd  # the splash
 xvfb-run -a godot --rendering-driver opengl3 --path . -- --qa --tool=res://tools/app_icon.gd     # re-render the app icon, .ico and splash
 godot --headless --path . -- --qa --tool=res://tools/quickplay_test.gd  # PLAY NOW lands in a 6-seat match
 godot --headless --path . -- --qa --solo --pace --speed=8               # real timers: seconds per phase + cake hit stats

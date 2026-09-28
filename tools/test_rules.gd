@@ -5,6 +5,7 @@ extends SceneTree
 ## claims, vote) that must end with winners. Prints the win balance per table size.
 
 var failures := 0
+var SIM_RULES := {} if OS.get_environment("NOROLES") == "" else ({"inspector": false, "physician": false} if OS.get_environment("NOROLES") == "1" else {"physician": false})
 
 
 func _init() -> void:
@@ -113,6 +114,83 @@ func _unit() -> void:
 			n += 1
 	var w4 := r4.check_winner()
 	check(w4["over"] and (w4["winners"] as Array) == [p4], "poisoner wins at 1 v 1")
+	_roles()
+
+
+## The Inspector and the Physician.
+func _roles() -> void:
+	var I := Defs.Ingredient
+	var IT := Defs.Item
+	var r := TeaRules.new()
+	r.setup(_players(6), {"items_per_round": 1}, 11)
+	var ins := -1
+	var doc := -1
+	for s in 6:
+		if r.seats[s]["role"] == TeaRules.INSPECTOR:
+			ins = s
+		elif r.seats[s]["role"] == TeaRules.PHYSICIAN:
+			doc = s
+	check(ins >= 0 and doc >= 0 and ins != doc, "6 guests: an Inspector and a Physician")
+	check(not r.is_poisoner(ins) and not r.is_poisoner(doc), "the roles are innocents")
+	var r5 := TeaRules.new()
+	r5.setup(_players(5), {}, 12)
+	check(r5.has_role(TeaRules.INSPECTOR) and not r5.has_role(TeaRules.PHYSICIAN), "5 guests: Inspector only")
+	var r4 := TeaRules.new()
+	r4.setup(_players(4), {}, 13)
+	check(not r4.has_role(TeaRules.INSPECTOR), "4 guests: no special roles")
+	var off := TeaRules.new()
+	off.setup(_players(6), {"inspector": false, "physician": false}, 14)
+	check(not off.has_role(TeaRules.INSPECTOR) and not off.has_role(TeaRules.PHYSICIAN), "roles can be switched off")
+	r.start_round()
+	var pz: int = r.poisoner_seats()[0]
+	check((r.seats[ins]["items"] as Array)[0] == IT.INSPECT and (r.seats[ins]["items"] as Array).size() == 2, "the Inspector gets INSPECT on top of an item")
+	check((r.seats[doc]["items"] as Array)[0] == IT.PROTECT, "the Physician gets WATCH OVER")
+	# The poisoner serves the guest the Physician will watch over.
+	var victim := ins
+	r.pour(pz, (r.seats[pz]["hand"] as Array).find(I.POISON), victim)
+	for s in 6:
+		if s != pz:
+			var t := (s + 1) % 6
+			if t == victim or t == s:
+				t = (t + 1) % 6
+			if t == s:
+				t = (t + 1) % 6
+			r.pour(s, (r.seats[s]["hand"] as Array).find(I.SUGAR) if (r.seats[s]["hand"] as Array).has(I.SUGAR) else 0, t)
+	# An antidote would spoil the test: take them all out of the victim's cup.
+	var vc: Dictionary = r.cups[r.cup_at[victim]]
+	vc["contents"] = (vc["contents"] as Array).filter(func(c: Dictionary) -> bool: return c["k"] == I.POISON)
+	r.begin_items()
+	check(r.choose_item(ins, 0, [ins]) != "", "the Inspector can't inspect themselves")
+	check(r.choose_item(ins, 0, [pz]) == "", "inspect the poisoner")
+	check(not r.seats[ins]["item_done"], "the Inspector still has their item to play")
+	check(r.choose_item(ins, 0, [pz]) != "", "one inspection a round")
+	check(r.choose_item(doc, 0, [victim]) == "", "the Physician watches over the victim")
+	for s in 6:
+		r.pass_turn(s)
+	var steps := r.resolve_items()
+	var found := false
+	for st: Dictionary in steps:
+		if int(st["item"]) in [IT.INSPECT, IT.PROTECT]:
+			check(st.get("secret", false) and (st["public"] as Array).is_empty(), "role cards are secret")
+		for ev: Dictionary in st["private"]:
+			if ev.get("type", "") == "inspect_result":
+				found = bool(ev["guilty"]) and int(ev["who"]) == pz
+	check(found, "the Inspector finds poison on the hands of the guest who poured it")
+	var drinks := r.drink_all()
+	var rev := false
+	for d: Dictionary in drinks:
+		if int(d["seat"]) == victim:
+			rev = bool(d["revived"]) and not bool(d["died"])
+	check(rev and r.is_alive(victim), "smelling salts: the watched guest survives the poison")
+	check(r.seats[doc]["revives"] == 1, "the revive is counted")
+	r.start_round()
+	r.begin_items()
+	check(r.choose_item(doc, 0, [victim]) != "", "not the same guest two rounds running")
+	check(r.choose_item(doc, 0, [doc]) == "", "the Physician may watch over themselves")
+	r.resolve_items()
+	r.start_round()
+	r.begin_items()
+	check(r.choose_item(doc, 0, [doc]) != "", "...but only once")
 
 
 func _simulate(n: int, count: int) -> void:
@@ -124,7 +202,7 @@ func _simulate(n: int, count: int) -> void:
 	rng.seed = n
 	for game in count:
 		var r := TeaRules.new()
-		r.setup(_players(n), {}, game * 7919 + n)
+		r.setup(_players(n), SIM_RULES, game * 7919 + n)
 		var bots: Array[BotBrain] = []
 		for s in n:
 			bots.append(BotBrain.new(s, game * 31 + s))
@@ -142,14 +220,18 @@ func _simulate(n: int, count: int) -> void:
 			r.deal_sightings()
 			r.begin_items()
 			for s in r.alive_seats():
-				var choice := bots[s].choose_item(r.private_state(s), r.public_state())
-				if choice.is_empty():
-					r.pass_turn(s)
-				else:
-					var err := r.choose_item(s, choice["index"], choice["targets"])
-					check(err == "", "bot item ok: %s" % err)
-					if err != "":
+				var tries := 0
+				while not r.seats[s]["item_done"] and tries < 4:
+					tries += 1
+					var choice := bots[s].choose_item(r.private_state(s), r.public_state())
+					if choice.is_empty():
 						r.pass_turn(s)
+					else:
+						var err := r.choose_item(s, choice["index"], choice["targets"])
+						check(err == "", "bot item ok: %s" % err)
+						if err != "":
+							r.pass_turn(s)
+				check(r.seats[s]["item_done"], "bot finished its items")
 			for step: Dictionary in r.resolve_items():
 				for ev: Dictionary in step["private"]:
 					bots[int(step["seat"])].on_private_event(ev, r.public_state())

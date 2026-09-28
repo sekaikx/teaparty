@@ -33,6 +33,8 @@ ICONS = {
     "ghost": ("ghost-fill", "#8aa6ff", 0.58),
     "arrow": ("arrow-fat-right-fill", "#ffb400", 0.56),
     "night": ("moon-stars-fill", "#3b4a9a", 0.56),
+    "inspect": ("detective-fill", "#c4861c", 0.6),
+    "protect": ("first-aid-fill", "#e0455f", 0.54),
 }
 
 

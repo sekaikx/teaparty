@@ -12,14 +12,14 @@ config_version=5
 
 config/name="Tea Party"
 config/description="Murder at Teatime: find the secret poisoner before they poison everyone."
-config/version="1.0.1"
+config/version="1.1.0"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://assets/icons/icon_256.png"
 config/windows_native_icon="res://assets/icons/icon.ico"
 boot_splash/bg_color=Color(0.1647, 0.0863, 0.251, 1)
-boot_splash/image="res://assets/icons/splash.png"
-boot_splash/fullsize=false
+boot_splash/image="res://assets/splash/key_art.png"
+boot_splash/stretch_mode=4
 boot_splash/use_filter=true
 
 [audio]
